@@ -1,0 +1,45 @@
+[event :fields [id type version timestamp stream]]
+
+;; Stream definitions
+[:streams
+  [Account
+
+    ;; events allowed for this stream
+    :events [
+          [AccountCreated :fields [account-id owner-name balance]]
+
+          [MoneyDeposited :fields [account-id amount]
+                          :constraints [(> amount 0)]]
+
+          [MoneyWithdrawn :fields [account-id amount]
+                          :constraints [(> amount 0)]]
+        ]
+    :key account-id]
+]
+
+
+
+;; 3. Example Queries
+
+;; Query 1: Find all accounts that had withdrawals within 1 hour of creation
+[:find ?account-id ?withdraw-amount
+ :where
+ [?c :type "AccountCreated"]
+ [?c :account-id ?account-id]
+ [?c :timestamp ?create-time]
+ [?w :type "MoneyWithdrawn"]
+ [?w :account-id ?account-id]
+ [?w :amount ?withdraw-amount]
+ [?w :timestamp ?withdraw-time]
+ [(< (- ?withdraw-time ?create-time) 3600000)]]
+
+;; Query 2: Find accounts with deposits larger than initial balance
+[:find ?account-id ?deposit-amount
+ :where
+ [?c :type "AccountCreated"]
+ [?c :account-id ?account-id]
+ [?c :balance ?initial]
+ [?d :type "MoneyDeposited"]
+ [?d :account-id ?account-id]
+ [?d :amount ?deposit-amount]
+ [(> ?deposit-amount ?initial)]]

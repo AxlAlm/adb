@@ -43,3 +43,54 @@
  [?d :account-id ?account-id]
  [?d :amount ?deposit-amount]
  [(> ?deposit-amount ?initial)]]
+
+
+{:stream Account
+ :key accountId
+ :events [
+   {:name AccountCreated
+    :fields [
+      [:accountId :string {:required true :pattern "^ACC-[0-9]{6}$"}]
+      [:ownerName :string {:required true :minLength 2}]
+      [:balance :decimal {:required true :min 0}]
+    ]}
+   {:name MoneyDeposited
+    :fields [
+      [:accountId :string {:required true}]
+      [:amount :decimal {:required true :min 0.01}]
+    ]}
+ ]}
+
+
+ {
+    Stream: {
+        Events {
+
+
+        }
+    }
+ }
+
+// stream(<stream name>, <key name>);
+stream(accounts, account-id);
+// event(<stream, name>, <event name>);
+event(AccountCreated, accounts);
+// attribute(<event name>, <attribute name>, <required>, <type>);
+attribute(AccountCreated, owner-name, true, string);
+
+//  adding
+add AccountCreated("axel", this)
+
+// transaction
+[add AccountCreated("axel", this)]
+
+
+//  adding
+add AccountCreated("axel", this)
+
+// transaction
+find ?accunt-id
+        
+
+
+

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Attribute {
     pub event: String,
     pub name: String,
@@ -8,21 +8,21 @@ pub struct Attribute {
     pub attribute_type: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Event {
     pub stream: String,
     pub name: String,
     pub attributes: Vec<Attribute>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Stream {
     pub name: String,
     pub key: String,
     pub events: Vec<Event>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Schema {
     pub streams: Vec<Stream>,
 }
@@ -31,6 +31,7 @@ pub struct Schema {
 pub enum ParseError {
     InvalidBLock,
     UnknownBlockType,
+    InvalidValue,
 }
 
 const BLOCK_SEPERATOR: &str = ";";
@@ -39,7 +40,6 @@ const FIELDS_CLOSER: &str = ")";
 
 // stream(...)  -> stream
 fn extract_block_type(input: &str) -> Result<String, ParseError> {
-    // if !input.contains(pat)
     let splits: Vec<&str> = input.split("(").collect();
     if splits.len() != 2 {
         return Err(ParseError::InvalidBLock);
@@ -60,78 +60,113 @@ fn extract_fields(input: &str) -> Result<Vec<&str>, ParseError> {
     return Ok(values);
 }
 
+// test, test-id -> stream {name: test, key:test-id}
 fn create_stream(values: Vec<&str>) -> Result<Stream, ParseError> {
     if values.len() != 2 {
         return Err(ParseError::InvalidBLock);
     }
 
+    let name = parse_value(values[0])?;
+    let key = parse_value(values[1])?;
+
     Ok(Stream {
-        name: values[0].to_lowercase(),
+        name,
         events: vec![],
-        key: values[1].to_lowercase(),
+        key,
     })
 }
 
-// event(<stream, name>, <event name>);
+// test-stream, test -> event {stream: test-stream, name: test}
 fn create_event(values: Vec<&str>) -> Result<Event, ParseError> {
     if values.len() != 2 {
         return Err(ParseError::InvalidBLock);
     }
 
-    Ok(Attribute {
-        stream: values[0].to_lowercase(),
-        name: values[1].to_lowercase(),
-        fields: vec![],
+    let stream = parse_value(values[0])?;
+    let name = parse_value(values[1])?;
+
+    Ok(Event {
+        stream,
+        name,
+        attributes: vec![],
     })
 }
 
-// event(<stream, name>, <event name>);
-fn create_attribute(values: Vec<&str>) -> Result<Event, ParseError> {
-    if values.len() != 2 {
+// test-event, test, true, string ->
+// attribute {event: event-name, name: test, required: true, attribute_type: str}
+fn create_attribute(values: Vec<&str>) -> Result<Attribute, ParseError> {
+    if values.len() != 4 {
         return Err(ParseError::InvalidBLock);
     }
 
-    Ok(Event {
-        stream: values[0].to_lowercase(),
-        name: values[1].to_lowercase(),
-        fields: vec![],
+    let event = parse_value(values[0])?;
+    let name = parse_value(values[1])?;
+    let required_value = parse_value(values[2])?;
+    let required = match required_value {
+        s if s == "true" => true,
+        s if s == "false" => false,
+        _ => return Err(ParseError::InvalidValue),
+    };
+    let attribute_type = parse_value(values[3])?;
+
+    Ok(Attribute {
+        event,
+        name,
+        required,
+        attribute_type,
     })
 }
 
+fn parse_value(input: &str) -> Result<String, ParseError> {
+    if input.trim().is_empty() {
+        return Err(ParseError::InvalidValue);
+    }
+    return Ok(input.to_string());
+}
+
 pub fn parse_schema(input: &str) -> Result<Schema, ParseError> {
-    let cleaned = String::from_iter(input.chars().filter(|x| !x.is_whitespace()));
-
     let mut streams_map: HashMap<String, Stream> = HashMap::new();
+    let mut events_map: HashMap<String, Event> = HashMap::new();
 
-    for block in cleaned.split(BLOCK_SEPERATOR) {
+    for dirty_block in input.split(BLOCK_SEPERATOR) {
+        let x = dirty_block.find("//");
+        if x.is_some() {
+            for c in dirty_block[x.unwrap()..].chars() {
+
+                if c
+                dbg!(c);
+            }
+        }
+
+        let block = String::from_iter(dirty_block.chars().filter(|x| !x.is_whitespace()));
+        // // let cleaned = String::from_iter(input.chars().filter(|x| !x.is_whitespace()));
+
         if block.is_empty() {
             continue;
         }
 
-        let block_type = extract_block_type(block)?;
-        let values = extract_fields(block)?;
-
-        dbg!("----");
-        dbg!(&block, &block_type, &values);
+        let block_type = extract_block_type(&block)?;
+        let values = extract_fields(&block)?;
 
         if block_type == "stream" {
             let stream = create_stream(values)?;
-            dbg!(&stream);
             streams_map.insert(stream.name.clone(), stream);
         } else if block_type == "event" {
             let event = create_event(values)?;
-            dbg!(&event);
+            events_map.insert(event.name.clone(), event);
         } else if block_type == "attribute" {
             let attribute = create_attribute(values)?;
-            dbg!(&attributes);
-        }
 
-        // match block_type {
-        //     "stream" => {
-        //         dbg!("ok");
-        //     }
-        //     _ => Err(ParseError::UnknownBlockType),
-        // }
+            dbg!(&events_map);
+            let event = events_map.get_mut(&attribute.event).unwrap();
+            event.attributes.push(attribute);
+        }
+    }
+
+    for event in events_map.values() {
+        dbg!(&streams_map);
+        let stream = streams_map.get_mut(&event.stream).unwrap();
+        stream.events.push(event.clone());
     }
 
     let streams: Vec<Stream> = streams_map.into_values().collect();
@@ -139,56 +174,111 @@ pub fn parse_schema(input: &str) -> Result<Schema, ParseError> {
     Ok(Schema { streams })
 }
 
-// stream(<stream name>, <key name>);
-// event(<stream, name>, <event name>);
-// attribute(<event name>, <attribute name>, <required>, <type>);
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn test_basic_schema_parse() {
         let schema = String::from(
             r#"
         stream(account, account-id);
-        event(AccountCreated, account);
+        event(account, AccountCreated);
         attribute(AccountCreated, owner-name, true, string);
+        attribute(AccountCreated, country, true, string);
+        event(account, AccountClosed);
+        attribute(AccountClosed, closed_at, true, time);
                 "#,
         );
 
-        let result = parse_schema(&schema).unwrap();
+        let expected = Schema {
+            streams: vec![Stream {
+                name: "account".to_string(),
+                key: "account-id".to_string(),
+                events: vec![
+                    Event {
+                        stream: "account".to_string(),
+                        name: "AccountCreated".to_string(),
+                        attributes: vec![
+                            Attribute {
+                                event: "AccountCreated".to_string(),
+                                name: "owner-name".to_string(),
+                                required: true,
+                                attribute_type: "string".to_string(),
+                            },
+                            Attribute {
+                                event: "AccountCreated".to_string(),
+                                name: "country".to_string(),
+                                required: true,
+                                attribute_type: "string".to_string(),
+                            },
+                        ],
+                    },
+                    Event {
+                        stream: "account".to_string(),
+                        name: "AccountClosed".to_string(),
+                        attributes: vec![Attribute {
+                            event: "AccountClosed".to_string(),
+                            name: "closed_at".to_string(),
+                            required: true,
+                            attribute_type: "time".to_string(),
+                        }],
+                    },
+                ],
+            }],
+        };
 
-        // Verify stream
-        assert_eq!(result.streams.len(), 1);
-        let stream = &result.streams[0];
-        assert_eq!(stream.name, "Account");
-        assert_eq!(stream.key, "account-id");
+        let result = match parse_schema(&schema) {
+            Ok(value) => value,
+            Err(error) => {
+                println!("Error occurred: {:?}", error);
+                panic!("Test failed due to error: {:?}", error);
+            }
+        };
+        assert_eq!(result, expected);
+    }
 
-        // Verify events
-        assert_eq!(stream.events.len(), 3);
+    #[test]
+    fn test_handle_comments() {
+        let schema = String::from(
+            r#"
+        // THIS IS SOME COMMENT
+        stream(account, account-id);
+        // THIS IS ANOTHER COMMENT
+        // AND IT IS A MULTI BLOCK COMMENT
+        event(account, AccountCreated);
+        attribute(AccountCreated, owner-name, true, string);
+  
+                "#,
+        );
 
-        // Check AccountCreated event
-        let account_created = &stream.events[0];
-        assert_eq!(account_created.name, "AccountCreated");
-        assert_eq!(account_created.fields.len(), 3);
-        assert_eq!(account_created.fields[0].name, "account-id");
-        assert_eq!(account_created.fields[1].name, "owner-name");
-        assert_eq!(account_created.fields[2].name, "balance");
+        let expected = Schema {
+            streams: vec![Stream {
+                name: "account".to_string(),
+                key: "account-id".to_string(),
+                events: vec![Event {
+                    stream: "account".to_string(),
+                    name: "AccountCreated".to_string(),
+                    attributes: vec![Attribute {
+                        event: "AccountCreated".to_string(),
+                        name: "owner-name".to_string(),
+                        required: true,
+                        attribute_type: "string".to_string(),
+                    }],
+                }],
+            }],
+        };
 
-        // Check MoneyDeposited event
-        let money_deposited = &stream.events[1];
-        assert_eq!(money_deposited.name, "MoneyDeposited");
-        assert_eq!(money_deposited.fields.len(), 2);
-        assert_eq!(money_deposited.fields[0].name, "account-id");
-        assert_eq!(money_deposited.fields[1].name, "amount");
+        let result = match parse_schema(&schema) {
+            Ok(value) => value,
+            Err(error) => {
+                println!("Error occurred: {:?}", error);
+                panic!("Test failed due to error: {:?}", error);
+            }
+        };
 
-        // Check MoneyWithdrawn event
-        let money_withdrawn = &stream.events[2];
-        assert_eq!(money_withdrawn.name, "MoneyWithdrawn");
-        assert_eq!(money_withdrawn.fields.len(), 2);
-        assert_eq!(money_withdrawn.fields[0].name, "account-id");
-        assert_eq!(money_withdrawn.fields[1].name, "amount");
+        assert_eq!(result, expected);
     }
 
     // #[test]

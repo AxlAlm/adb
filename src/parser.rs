@@ -1,5 +1,16 @@
 use std::collections::HashMap;
 
+const BLOCK_SEPERATOR: &str = ";";
+const FIELDS_OPENER: &str = "(";
+const FIELDS_CLOSER: &str = ")";
+const COMMENT_OPENER: &str = "//";
+
+#[derive(Debug)]
+pub enum ParseError {
+    InvalidBLock,
+    InvalidValue,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Attribute {
     pub event: String,
@@ -26,17 +37,6 @@ pub struct Stream {
 pub struct Schema {
     pub streams: Vec<Stream>,
 }
-
-#[derive(Debug)]
-pub enum ParseError {
-    InvalidBLock,
-    UnknownBlockType,
-    InvalidValue,
-}
-
-const BLOCK_SEPERATOR: &str = ";";
-const FIELDS_OPENER: &str = "(";
-const FIELDS_CLOSER: &str = ")";
 
 // stream(...)  -> stream
 fn extract_block_type(input: &str) -> Result<String, ParseError> {
@@ -128,20 +128,21 @@ pub fn parse_schema(input: &str) -> Result<Schema, ParseError> {
     let mut streams_map: HashMap<String, Stream> = HashMap::new();
     let mut events_map: HashMap<String, Event> = HashMap::new();
 
-    for dirty_block in input.split(BLOCK_SEPERATOR) {
-        let x = dirty_block.find("//");
-        if x.is_some() {
-            for c in dirty_block[x.unwrap()..].chars() {
+    for line in input.lines() {
+        // to solve cases where we have trailing comments;
+        //     stream(x,y); // trailing comment
+        let block = match line.trim().splitn(2, BLOCK_SEPERATOR).next() {
+            Some(x) => x,
+            _ => return Err(ParseError::InvalidBLock),
+        };
 
-                if c
-                dbg!(c);
-            }
-        }
-
-        let block = String::from_iter(dirty_block.chars().filter(|x| !x.is_whitespace()));
-        // // let cleaned = String::from_iter(input.chars().filter(|x| !x.is_whitespace()));
+        let block = String::from_iter(block.chars().filter(|x| !x.is_whitespace()));
 
         if block.is_empty() {
+            continue;
+        }
+
+        if block.starts_with(COMMENT_OPENER) {
             continue;
         }
 
@@ -156,8 +157,6 @@ pub fn parse_schema(input: &str) -> Result<Schema, ParseError> {
             events_map.insert(event.name.clone(), event);
         } else if block_type == "attribute" {
             let attribute = create_attribute(values)?;
-
-            dbg!(&events_map);
             let event = events_map.get_mut(&attribute.event).unwrap();
             event.attributes.push(attribute);
         }
@@ -178,6 +177,16 @@ pub fn parse_schema(input: &str) -> Result<Schema, ParseError> {
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
+
+    fn sort_schema_events(mut schema: Schema) -> Schema {
+        for stream in &mut schema.streams {
+            stream.events.sort_by(|a, b| a.name.cmp(&b.name));
+            for event in &mut stream.events {
+                event.attributes.sort_by(|a, b| a.name.cmp(&b.name));
+            }
+        }
+        schema
+    }
 
     #[test]
     fn test_basic_schema_parse() {
@@ -236,7 +245,7 @@ mod tests {
                 panic!("Test failed due to error: {:?}", error);
             }
         };
-        assert_eq!(result, expected);
+        assert_eq!(sort_schema_events(result), sort_schema_events(expected));
     }
 
     #[test]
@@ -247,7 +256,7 @@ mod tests {
         stream(account, account-id);
         // THIS IS ANOTHER COMMENT
         // AND IT IS A MULTI BLOCK COMMENT
-        event(account, AccountCreated);
+        event(account, AccountCreated); // COMMENT AFTER
         attribute(AccountCreated, owner-name, true, string);
   
                 "#,
@@ -278,7 +287,7 @@ mod tests {
             }
         };
 
-        assert_eq!(result, expected);
+        assert_eq!(sort_schema_events(result), sort_schema_events(expected));
     }
 
     // #[test]

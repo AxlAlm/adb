@@ -6,7 +6,7 @@ const FIELDS_CLOSER: &str = ")";
 const COMMENT_OPENER: &str = "//";
 
 #[derive(Debug)]
-pub enum ParseError {
+pub enum SchemaParserError {
     InvalidBLock,
     InvalidValue,
 }
@@ -39,10 +39,10 @@ pub struct Schema {
 }
 
 // stream(...)  -> stream
-fn extract_block_type(input: &str) -> Result<String, ParseError> {
+fn extract_block_type(input: &str) -> Result<String, SchemaParserError> {
     let splits: Vec<&str> = input.split("(").collect();
     if splits.len() != 2 {
-        return Err(ParseError::InvalidBLock);
+        return Err(SchemaParserError::InvalidBLock);
     }
 
     let block_type = splits[0].to_lowercase();
@@ -50,10 +50,10 @@ fn extract_block_type(input: &str) -> Result<String, ParseError> {
 }
 
 // stream(hello, hello-id)  -> hello, hello-id
-fn extract_fields(input: &str) -> Result<Vec<&str>, ParseError> {
+fn extract_fields(input: &str) -> Result<Vec<&str>, SchemaParserError> {
     let i = match input.find(FIELDS_OPENER) {
         Some(index) => index + 1,
-        None => return Err(ParseError::InvalidBLock),
+        None => return Err(SchemaParserError::InvalidBLock),
     };
     let j = input.len() - 1;
     let values = input[i..j].split(",").collect();
@@ -61,9 +61,9 @@ fn extract_fields(input: &str) -> Result<Vec<&str>, ParseError> {
 }
 
 // test, test-id -> stream {name: test, key:test-id}
-fn create_stream(values: Vec<&str>) -> Result<Stream, ParseError> {
+fn create_stream(values: Vec<&str>) -> Result<Stream, SchemaParserError> {
     if values.len() != 2 {
-        return Err(ParseError::InvalidBLock);
+        return Err(SchemaParserError::InvalidBLock);
     }
 
     let name = parse_value(values[0])?;
@@ -77,9 +77,9 @@ fn create_stream(values: Vec<&str>) -> Result<Stream, ParseError> {
 }
 
 // test-stream, test -> event {stream: test-stream, name: test}
-fn create_event(values: Vec<&str>) -> Result<Event, ParseError> {
+fn create_event(values: Vec<&str>) -> Result<Event, SchemaParserError> {
     if values.len() != 2 {
-        return Err(ParseError::InvalidBLock);
+        return Err(SchemaParserError::InvalidBLock);
     }
 
     let stream = parse_value(values[0])?;
@@ -94,9 +94,9 @@ fn create_event(values: Vec<&str>) -> Result<Event, ParseError> {
 
 // test-event, test, true, string ->
 // attribute {event: event-name, name: test, required: true, attribute_type: str}
-fn create_attribute(values: Vec<&str>) -> Result<Attribute, ParseError> {
+fn create_attribute(values: Vec<&str>) -> Result<Attribute, SchemaParserError> {
     if values.len() != 4 {
-        return Err(ParseError::InvalidBLock);
+        return Err(SchemaParserError::InvalidBLock);
     }
 
     let event = parse_value(values[0])?;
@@ -105,7 +105,7 @@ fn create_attribute(values: Vec<&str>) -> Result<Attribute, ParseError> {
     let required = match required_value {
         s if s == "true" => true,
         s if s == "false" => false,
-        _ => return Err(ParseError::InvalidValue),
+        _ => return Err(SchemaParserError::InvalidValue),
     };
     let attribute_type = parse_value(values[3])?;
 
@@ -117,14 +117,14 @@ fn create_attribute(values: Vec<&str>) -> Result<Attribute, ParseError> {
     })
 }
 
-fn parse_value(input: &str) -> Result<String, ParseError> {
+fn parse_value(input: &str) -> Result<String, SchemaParserError> {
     if input.trim().is_empty() {
-        return Err(ParseError::InvalidValue);
+        return Err(SchemaParserError::InvalidValue);
     }
     return Ok(input.to_string());
 }
 
-pub fn parse_schema(input: &str) -> Result<Schema, ParseError> {
+pub fn parse_schema(input: &str) -> Result<Schema, SchemaParserError> {
     let mut streams_map: HashMap<String, Stream> = HashMap::new();
     let mut events_map: HashMap<String, Event> = HashMap::new();
 
@@ -133,7 +133,7 @@ pub fn parse_schema(input: &str) -> Result<Schema, ParseError> {
         //     stream(x,y); // trailing comment
         let block = match line.trim().splitn(2, BLOCK_SEPERATOR).next() {
             Some(x) => x,
-            _ => return Err(ParseError::InvalidBLock),
+            _ => return Err(SchemaParserError::InvalidBLock),
         };
 
         let block = String::from_iter(block.chars().filter(|x| !x.is_whitespace()));
@@ -289,113 +289,4 @@ mod tests {
 
         assert_eq!(sort_schema_events(result), sort_schema_events(expected));
     }
-
-    // #[test]
-    // fn test_basic_schema_parse() {
-    //     let schema = String::from(
-    //         r#"{:streams
-    //                 [Account
-    //                     :events [
-    //                         [AccountCreated :fields [account-id owner-name balance]]
-    //                         [MoneyDeposited :fields [account-id amount]]
-    //                         [MoneyWithdrawn :fields [account-id amount]]
-    //                     ]
-    //                     :key account-id]
-    //             }"#,
-    //     );
-
-    //     let result = parse_schema(&schema).unwrap();
-
-    //     // Verify stream
-    //     assert_eq!(result.streams.len(), 1);
-    //     let stream = &result.streams[0];
-    //     assert_eq!(stream.name, "Account");
-    //     assert_eq!(stream.key, "account-id");
-
-    //     // Verify events
-    //     assert_eq!(stream.events.len(), 3);
-
-    //     // Check AccountCreated event
-    //     let account_created = &stream.events[0];
-    //     assert_eq!(account_created.name, "AccountCreated");
-    //     assert_eq!(account_created.fields.len(), 3);
-    //     assert_eq!(account_created.fields[0].name, "account-id");
-    //     assert_eq!(account_created.fields[1].name, "owner-name");
-    //     assert_eq!(account_created.fields[2].name, "balance");
-
-    //     // Check MoneyDeposited event
-    //     let money_deposited = &stream.events[1];
-    //     assert_eq!(money_deposited.name, "MoneyDeposited");
-    //     assert_eq!(money_deposited.fields.len(), 2);
-    //     assert_eq!(money_deposited.fields[0].name, "account-id");
-    //     assert_eq!(money_deposited.fields[1].name, "amount");
-
-    //     // Check MoneyWithdrawn event
-    //     let money_withdrawn = &stream.events[2];
-    //     assert_eq!(money_withdrawn.name, "MoneyWithdrawn");
-    //     assert_eq!(money_withdrawn.fields.len(), 2);
-    //     assert_eq!(money_withdrawn.fields[0].name, "account-id");
-    //     assert_eq!(money_withdrawn.fields[1].name, "amount");
-    // }
-
-    // #[test]
-    // fn test_invalid_schema() {
-    //     // Missing :events keyword
-    //     let schema =
-    //         String::from(r#"[:streams [Account [AccountCreated :fields [id]] :key account-id]]"#);
-    //     let result = parse_schema(&schema);
-    //     assert!(matches!(result, Err(ParseError::ExpectedToken(":events"))));
-
-    //     // Missing :fields keyword
-    //     let schema =
-    //         String::from(r#"[:streams [Account :events [[AccountCreated [id]]] :key account-id]]"#);
-    //     let result = parse_schema(&schema);
-    //     assert!(matches!(result, Err(ParseError::ExpectedToken(":fields"))));
-
-    //     // Missing :key keyword
-    //     let schema = String::from(
-    //         r#"[:streams [Account :events [[AccountCreated :fields [id]]] account-id]]"#,
-    //     );
-    //     let result = parse_schema(&schema);
-    //     assert!(matches!(result, Err(ParseError::ExpectedToken(":key"))));
-    // }
-
-    // #[test]
-    // fn test_empty_schema() {
-    //     let schema = String::from("[:streams]");
-    //     let result = parse_schema(&schema).unwrap();
-    //     assert_eq!(result.streams.len(), 0);
-    // }
-
-    // #[test]
-    // fn test_multiple_streams() {
-    //     let schema = String::from(
-    //         r#"[:streams
-    //         [Account :events [[AccountCreated :fields [id]]] :key id]
-    //         [User :events [[UserCreated :fields [id name]]] :key id]
-    //     ]"#,
-    //     );
-
-    //     let result = parse_schema(&schema).unwrap();
-    //     assert_eq!(result.streams.len(), 2);
-    //     assert_eq!(result.streams[0].name, "Account");
-    //     assert_eq!(result.streams[1].name, "User");
-    // }
-
-    // #[test]
-    // fn test_comment() {
-    //     let schema = String::from(
-    //         r#"[:streams
-    //         // some comment 1
-    //         [Account :events [[AccountCreated :fields [id]]] :key id]
-    //         // some comment 2
-    //         [User :events [[UserCreated :fields [id name]]] :key id]
-    //     ]"#,
-    //     );
-
-    //     let result = parse_schema(&schema).unwrap();
-    //     assert_eq!(result.streams.len(), 2);
-    //     assert_eq!(result.streams[0].name, "Account");
-    //     assert_eq!(result.streams[1].name, "User");
-    // }
 }

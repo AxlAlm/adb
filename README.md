@@ -40,3 +40,14 @@ Working with event sourcing systems this is not as easy. Often in would entail d
 - reads/writes to/from disk
 - generated code for type safe and easy interaction with
 - live projections and read models
+
+### Write Concurrency
+
+Will be opting for Optimistic Concurrency. This means that we can concurrently write to multiple streams or within a stream if the keys for events differ.
+However, to ensure serialization of events writes to stream keys are serial. This will be acheived by doing the following;
+
+1. on writing a write lock will be aquired
+2. version of last added event will be fetched
+3. a check will be done to ensure that the version of the event that is being added is equal to last added events version + 1
+4. if (3) fails transaction will fail, if (3) passed event will be written
+5. write lock is released

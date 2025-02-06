@@ -1,26 +1,18 @@
 // mod generator;
-mod parser;
+mod mutation_parser;
+mod schema_parser;
 
 // use crate::generator::CodeGenerator;
 
 // Example usage
 fn main() {
-    // let schema = r#"
-    // [:schema
-    //   [event :fields [id type version timestamp stream]]
-    //   [AccountCreated :fields [account-id owner-name balance]]
-    //   [MoneyDeposited :fields [account-id amount]
-    //                   :constraints [(> amount 0)]]
-    //   [MoneyWithdrawn :fields [account-id amount]
-    //                   :constraints [(> amount 0)]]
-    // ]
-    // [:streams
-    //   [account
-    //     :events [AccountCreated MoneyDeposited MoneyWithdrawn]
-    //     :key account-id
-    //     :ordering version]
-    // ]
-    // "#;
+    let schema = r#"
+    "#;
+
+    let schema = match schema_parser::parse_schema(&schema) {
+        Ok(x) => x,
+        Err(_) => panic!("OH NO"),
+    };
 
     // let generator = CodeGenerator::new("./src/adb".to_string());
     // generator.generate(schema)?;

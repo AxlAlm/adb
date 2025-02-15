@@ -1,5 +1,5 @@
+use crate::ast::Schema;
 use crate::parser::mutation::AddEventMutation;
-use crate::parser::schema::Schema;
 
 // #[derive(Debug)]
 // pub enum SchemaParserError {

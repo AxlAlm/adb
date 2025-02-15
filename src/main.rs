@@ -6,7 +6,7 @@ fn main() {
     let schema = r#"
 stream(accounts, account-id);
 event(accounts, AccountCreated);
-attribute(AccountCreated, owner-name, true, string);
+attribute(accounts, AccountCreated, owner-name, true, string);
     "#;
 
     let schema = match parser::schema::parse(&schema) {

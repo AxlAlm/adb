@@ -1,115 +1,19 @@
-use std::{collections::HashMap, fmt, str::FromStr};
+use std::collections::HashMap;
+
+use crate::ast::{Attribute, AttributeName, Event, EventName, Schema, Stream, StreamName};
 
 const BLOCK_SEPERATOR: &str = ";";
 const FIELDS_OPENER: &str = "(";
 // const FIELDS_CLOSER: &str = ")";
 const COMMENT_OPENER: &str = "//";
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub enum SchemaParserError {
     InvalidBlock(String),
     CreateStreamError(String),
     CreateEventError(String),
     CreateAttributeError(String),
-    InvalidField(String),
-    StreamNotFound(String),
-    EventNotFound(String),
-}
-
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
-pub struct StreamName(String);
-
-impl StreamName {
-    pub fn new(s: impl Into<String>) -> Self {
-        StreamName(s.into())
-    }
-}
-impl fmt::Display for StreamName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
-pub struct EventName(String);
-
-impl EventName {
-    pub fn new(s: impl Into<String>) -> Self {
-        EventName(s.into())
-    }
-}
-
-impl fmt::Display for EventName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl PartialOrd for EventName {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.0.partial_cmp(&other.0)
-    }
-}
-
-impl Ord for EventName {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0.cmp(&other.0)
-    }
-}
-
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
-pub struct AttributeName(String);
-
-impl AttributeName {
-    pub fn new(s: impl Into<String>) -> Self {
-        AttributeName(s.into())
-    }
-}
-
-impl fmt::Display for AttributeName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl PartialOrd for AttributeName {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.0.partial_cmp(&other.0)
-    }
-}
-
-impl Ord for AttributeName {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0.cmp(&other.0)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Attribute {
-    pub name: AttributeName,
-    pub event_name: EventName,
-    pub stream_name: StreamName,
-    pub required: bool,
-    pub attribute_type: String,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Event {
-    pub name: EventName,
-    pub stream_name: StreamName,
-}
-
-#[derive(Debug, PartialEq)]
-pub struct Stream {
-    pub name: StreamName,
-    pub key: String,
-}
-
-#[derive(Debug, PartialEq)]
-pub struct Schema {
-    streams: HashMap<StreamName, Stream>,
-    events: HashMap<(StreamName, EventName), Event>,
-    attributes: HashMap<(StreamName, EventName, AttributeName), Attribute>,
 }
 
 // stream(...)  -> stream
@@ -359,16 +263,6 @@ mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
 
-    // fn sort_schema_events(mut schema: Schema) -> Schema {
-    //     for stream in &mut schema.streams {
-    //         stream.events.sort_by(|a, b| a.name.cmp(&b.name));
-    //         for event in &mut stream.events {
-    //             event.attributes.sort_by(|a, b| a.name.cmp(&b.name));
-    //         }
-    //     }
-    //     schema
-    // }
-
     #[test]
     fn test_basic_schema_parse() {
         let schema = String::from(
@@ -464,34 +358,6 @@ mod tests {
                 panic!("Test failed due to error: {:?}", error);
             }
         };
-
-        // Compare contents regardless of order
-        for (k, v) in result.streams.iter() {
-            let vv = match expected.streams.get(k) {
-                Some(v) => v,
-                _ => panic!("missing stream {}", k),
-            };
-
-            assert_eq!(v, vv)
-        }
-
-        for (k, v) in result.events.iter() {
-            let vv = match expected.events.get(k) {
-                Some(v) => v,
-                _ => panic!("missing event {:?}", k),
-            };
-
-            assert_eq!(v, vv)
-        }
-
-        for (k, v) in result.attributes.iter() {
-            let vv = match expected.attributes.get(k) {
-                Some(v) => v,
-                _ => panic!("missing attribute {:?}", k),
-            };
-
-            assert_eq!(v, vv)
-        }
 
         assert_eq!(expected, result)
     }

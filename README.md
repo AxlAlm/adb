@@ -26,18 +26,17 @@ Working with event sourcing systems this is not as easy. Often in would entail d
 
 ## Features
 
-- event sourcing db allowing to append and read event from streams
-- simple cli for db interaction
-- queries and mutations in datalog
-
-### limitation
-
-- only in memory
+- schema
+- mutations (add)
+- queries
+- transaction
+- language for defining schema, mutation, queries and transactions
+- cli to interact with db
 
 ### future extensions
 
-- data backups on disk (WAL file(?))
-- reads/writes to/from disk
+- reads/writes to/from disk (i.e. not just in memory)
+- backups (WAL file(?))
 - generated code for type safe and easy interaction with
 - live projections and read models
 
@@ -51,3 +50,13 @@ However, to ensure serialization of events writes to stream keys are serial. Thi
 3. a check will be done to ensure that the version of the event that is being added is equal to last added events version + 1
 4. if (3) fails transaction will fail, if (3) passed event will be written
 5. write lock is released
+
+#### TODO
+
+- [] migrate (naive)
+- [] data storing (in memory)
+- [] mutation operation (validation + transaction + add to event stream)
+- [] simple cli
+- [] query language and parser for queries
+- [] query planning and execution
+- [] data indexing to optimize queries

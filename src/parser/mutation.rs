@@ -82,7 +82,7 @@ fn parse_mutation_line(input: &str) -> Result<AddEventMutation, MutationParserEr
     });
 }
 
-pub fn parse_mutation(input: &str) -> Result<Vec<AddEventMutation>, MutationParserError> {
+pub fn parse(input: &str) -> Result<Vec<AddEventMutation>, MutationParserError> {
     let mut mutations = vec![];
     for line in input.lines() {
         // to solve cases where we have trailing comments;
@@ -150,7 +150,7 @@ mod test {
             ],
         }];
 
-        let mutations = match parse_mutation(&input) {
+        let mutations = match parse(&input) {
             Ok(x) => x,
             Err(_) => panic!("Got error expected none!"),
         };
@@ -184,7 +184,7 @@ mod test {
             ],
         }];
 
-        let mutations = match parse_mutation(&input) {
+        let mutations = match parse(&input) {
             Ok(x) => x,
             Err(_) => panic!("Got error expected none!"),
         };

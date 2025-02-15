@@ -1,5 +1,5 @@
-mod mutation_parser;
-mod schema_parser;
+mod operation;
+mod parser;
 
 fn main() {
     let schema = r#"
@@ -8,7 +8,7 @@ event(accounts, AccountCreated);
 attribute(AccountCreated, owner-name, true, string);
     "#;
 
-    let schema = match schema_parser::parse_schema(&schema) {
+    let schema = match parser::schema::parse(&schema) {
         Ok(x) => x,
         Err(_) => panic!("failed to parse schema"),
     };
@@ -17,11 +17,13 @@ attribute(AccountCreated, owner-name, true, string);
         ADD AccountCreated(owner-name="axel") TO accounts:123
     "#;
 
-    let mutations = match mutation_parser::parse_mutation(&mutation) {
+    let mutations = match parser::mutation::parse(&mutation) {
         Ok(x) => x,
         Err(_) => panic!("failed to parse mutation"),
     };
 
     dbg!(&schema);
     dbg!(&mutations);
+
+    // operation::mutation::mutate();
 }

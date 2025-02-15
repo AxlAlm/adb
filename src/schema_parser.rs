@@ -10,6 +10,7 @@ pub enum SchemaParserError {
     InvalidBLock,
     InvalidValue,
     StreamNotFound,
+    EventNotFound,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -160,7 +161,7 @@ pub fn parse_schema(input: &str) -> Result<Schema, SchemaParserError> {
             let attribute = create_attribute(values)?;
             let event = match events_map.get_mut(&attribute.event) {
                 Some(x) => x,
-                _ => return Err(SchemaParserError::StreamNotFound),
+                _ => return Err(SchemaParserError::EventNotFound),
             };
             event.attributes.push(attribute);
         }
@@ -304,9 +305,27 @@ mod tests {
                 "#,
         );
 
-        let schema = parse_schema(&schema);
-        if schema.is_ok() {
-            panic!("expected schema parsing to fail")
-        }
+        match parse_schema(&schema) {
+            Ok(_) => panic!("expected schema parsing to fail"),
+            Err(_e @ SchemaParserError::StreamNotFound) => println!("success"),
+            Err(_) => panic!("incorrect error type returned"),
+        };
+    }
+
+    #[test]
+    fn test_handle_event_missing() {
+        let schema = String::from(
+            r#"
+        stream(account, account-id);
+        event(account, AccountCreated);
+        attribute(DOES_NOT_EXIST, owner-name, true, string);
+                "#,
+        );
+
+        match parse_schema(&schema) {
+            Ok(_) => panic!("expected schema parsing to fail"),
+            Err(_e @ SchemaParserError::EventNotFound) => println!("success"),
+            Err(_) => panic!("incorrect error type returned"),
+        };
     }
 }

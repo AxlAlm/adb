@@ -26,5 +26,10 @@ attribute(accounts, AccountCreated, owner-name, true, string);
     dbg!(&schema);
     dbg!(&mutations);
 
-    // operation::mutation::mutate();
+    for mutation in mutations {
+        match operation::mutation::mutate(mutation, &schema) {
+            Ok(_) => println!("mutation done"),
+            Err(e) => panic!("failed to mutate. {}", e),
+        }
+    }
 }

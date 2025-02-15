@@ -1,3 +1,5 @@
+use crate::ast::mutation::{AddEventMutation, Attribute};
+
 const BLOCK_SEPERATOR: &str = ";";
 const FIELDS_OPENER: &str = "(";
 const FIELDS_CLOSER: &str = ")";
@@ -9,20 +11,6 @@ const STREAM_INDICATOR: &str = "TO";
 #[derive(Debug)]
 pub enum MutationParserError {
     InvalidMutation,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct AddEventMutation {
-    pub stream: String,
-    pub key: String,
-    pub event: String,
-    pub attributes: Vec<Attribute>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Attribute {
-    pub name: String,
-    pub value: String,
 }
 
 fn parse_mutation_line(input: &str) -> Result<AddEventMutation, MutationParserError> {

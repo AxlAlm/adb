@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ast::{Attribute, AttributeName, Event, EventName, Schema, Stream, StreamName};
+use crate::ast::schema::{Attribute, AttributeName, Event, EventName, Schema, Stream, StreamName};
 
 const BLOCK_SEPERATOR: &str = ";";
 const FIELDS_OPENER: &str = "(";

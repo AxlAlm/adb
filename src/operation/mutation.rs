@@ -1,54 +1,122 @@
-use crate::ast::Schema;
-use crate::parser::mutation::AddEventMutation;
+use crate::ast::mutation::AddEventMutation;
+use crate::ast::schema::Schema;
 
-// #[derive(Debug)]
-// pub enum SchemaParserError {
-//     InvalidBLock,
-//     InvalidValue,
-//     StreamNotFound,
-//     EventNotFound,
-// }
-//
-#[derive(Debug)]
-pub enum MutationError {
-    MutationInvalid(String),
-    MutationFailed,
-}
-
-// is mutation possible?
-fn validate_mutation(mutation: AddEventMutation, schema: Schema) -> Result<bool, MutationError> {
-    // let mut stream_exists = false;
-    // for stream in schema.streams {
-    //     if stream.name == mutation.stream {
-    //         stream_exists = true;
-    //     }
-    // }
-
-    // if !stream_exists {
-    //     return Err(MutationError::MutationInvalid(format!(
-    //         "Stream '{}' does not exist in schema",
-    //         mutation.stream
-    //     )));
-    // }
-
-    // let mut stream_exists = false;
-    // for stream in schema.streams {
-    //     if stream.name == mutation.stream {
-    //         stream_exists = true;
-    //     }
-    // }
-
-    // if !stream_exists {
-    //     return Err(MutationError::MutationInvalid(format!(
-    //         "Stream '{}' does not exist in schema",
-    //         mutation.stream
-    //     )));
-    // }
-
-    Ok(true)
-}
-
-pub fn mutate(mutation: AddEventMutation, schema: Schema) -> Result<String, MutationError> {
-    println!("mutate done");
+pub fn mutate(mutation: AddEventMutation, schema: &Schema) -> Result<String, String> {
+    schema.is_mutation_possible(&mutation)?;
     Ok("".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+
+    use crate::ast::mutation;
+    use crate::ast::schema;
+
+    use std::collections::HashMap;
+
+    use super::*;
+
+    #[test]
+    fn test_mutate_valid() {
+        let schema = Schema {
+            streams: HashMap::from([(
+                schema::StreamName("account".to_string()),
+                schema::Stream {
+                    name: schema::StreamName("account".to_string()),
+                    key: "account-id".to_string(),
+                },
+            )]),
+            events: HashMap::from([(
+                (
+                    schema::StreamName("account".to_string()),
+                    schema::EventName("AccountCreated".to_string()),
+                ),
+                schema::Event {
+                    name: schema::EventName("AccountCreated".to_string()),
+                    stream_name: schema::StreamName("account".to_string()),
+                },
+            )]),
+            attributes: HashMap::from([(
+                (
+                    schema::StreamName("account".to_string()),
+                    schema::EventName("AccountCreated".to_string()),
+                    schema::AttributeName("owner-name".to_string()),
+                ),
+                schema::Attribute {
+                    name: schema::AttributeName("owner-name".to_string()),
+                    event_name: schema::EventName("AccountCreated".to_string()),
+                    stream_name: schema::StreamName("account".to_string()),
+                    required: true,
+                    attribute_type: "string".to_string(),
+                },
+            )]),
+        };
+
+        let mutation = mutation::AddEventMutation {
+            stream: "account".to_string(),
+            key: "123".to_string(),
+            event: "AccountCreated".to_string(),
+            attributes: vec![mutation::Attribute {
+                name: "owner-name".to_string(),
+                value: "axel".to_string(),
+            }],
+        };
+
+        match mutate(mutation, &schema) {
+            Ok(_) => println!("Success"),
+            Err(e) => panic!("Failed. Got error {}", e),
+        }
+    }
+
+    #[test]
+    fn test_mutate_stream_invalid() {
+        let schema = Schema {
+            streams: HashMap::from([(
+                schema::StreamName("account".to_string()),
+                schema::Stream {
+                    name: schema::StreamName("account".to_string()),
+                    key: "account-id".to_string(),
+                },
+            )]),
+            events: HashMap::from([(
+                (
+                    schema::StreamName("account".to_string()),
+                    schema::EventName("AccountCreated".to_string()),
+                ),
+                schema::Event {
+                    name: schema::EventName("AccountCreated".to_string()),
+                    stream_name: schema::StreamName("account".to_string()),
+                },
+            )]),
+            attributes: HashMap::from([(
+                (
+                    schema::StreamName("account".to_string()),
+                    schema::EventName("AccountCreated".to_string()),
+                    schema::AttributeName("owner-name".to_string()),
+                ),
+                schema::Attribute {
+                    name: schema::AttributeName("owner-name".to_string()),
+                    event_name: schema::EventName("AccountCreated".to_string()),
+                    stream_name: schema::StreamName("account".to_string()),
+                    required: true,
+                    attribute_type: "string".to_string(),
+                },
+            )]),
+        };
+
+        let mutation = mutation::AddEventMutation {
+            stream: "NON_EXISTENT_STREAM".to_string(),
+            key: "123".to_string(),
+            event: "AccountCreated".to_string(),
+            attributes: vec![mutation::Attribute {
+                name: "owner-name".to_string(),
+                value: "axel".to_string(),
+            }],
+        };
+
+        match mutate(mutation, &schema) {
+            Ok(_) => panic!("expected error"),
+            Err(e) => println!("success. Got error {}", e),
+        }
+    }
 }

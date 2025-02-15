@@ -2,13 +2,14 @@ use std::collections::HashMap;
 
 const BLOCK_SEPERATOR: &str = ";";
 const FIELDS_OPENER: &str = "(";
-const FIELDS_CLOSER: &str = ")";
+// const FIELDS_CLOSER: &str = ")";
 const COMMENT_OPENER: &str = "//";
 
 #[derive(Debug)]
 pub enum SchemaParserError {
     InvalidBLock,
     InvalidValue,
+    StreamNotFound,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -157,19 +158,23 @@ pub fn parse_schema(input: &str) -> Result<Schema, SchemaParserError> {
             events_map.insert(event.name.clone(), event);
         } else if block_type == "attribute" {
             let attribute = create_attribute(values)?;
-            let event = events_map.get_mut(&attribute.event).unwrap();
+            let event = match events_map.get_mut(&attribute.event) {
+                Some(x) => x,
+                _ => return Err(SchemaParserError::StreamNotFound),
+            };
             event.attributes.push(attribute);
         }
     }
 
     for event in events_map.values() {
-        dbg!(&streams_map);
-        let stream = streams_map.get_mut(&event.stream).unwrap();
+        let stream = match streams_map.get_mut(&event.stream) {
+            Some(x) => x,
+            _ => return Err(SchemaParserError::StreamNotFound),
+        };
         stream.events.push(event.clone());
     }
 
     let streams: Vec<Stream> = streams_map.into_values().collect();
-    dbg!(&streams);
     Ok(Schema { streams })
 }
 
@@ -288,5 +293,20 @@ mod tests {
         };
 
         assert_eq!(sort_schema_events(result), sort_schema_events(expected));
+    }
+
+    #[test]
+    fn test_handle_stream_missing() {
+        let schema = String::from(
+            r#"
+        stream(account, account-id);
+        event(DOES_NOT_EXIST, AccountCreated);
+                "#,
+        );
+
+        let schema = parse_schema(&schema);
+        if schema.is_ok() {
+            panic!("expected schema parsing to fail")
+        }
     }
 }

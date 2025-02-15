@@ -1,21 +1,27 @@
-// mod generator;
 mod mutation_parser;
 mod schema_parser;
 
-// use crate::generator::CodeGenerator;
-
-// Example usage
 fn main() {
     let schema = r#"
+stream(accounts, account-id);
+event(accounts, AccountCreated);
+attribute(AccountCreated, owner-name, true, string);
     "#;
 
     let schema = match schema_parser::parse_schema(&schema) {
         Ok(x) => x,
-        Err(_) => panic!("OH NO"),
+        Err(_) => panic!("failed to parse schema"),
     };
 
-    // let generator = CodeGenerator::new("./src/adb".to_string());
-    // generator.generate(schema)?;
+    let mutation = r#"
+        ADD AccountCreated(owner-name="axel") TO accounts:123
+    "#;
 
-    // Ok(())
+    let mutations = match mutation_parser::parse_mutation(&mutation) {
+        Ok(x) => x,
+        Err(_) => panic!("failed to parse mutation"),
+    };
+
+    dbg!(&schema);
+    dbg!(&mutations);
 }

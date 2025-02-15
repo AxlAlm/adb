@@ -99,10 +99,7 @@ pub struct Schema {
 }
 
 impl Schema {
-    pub fn is_mutation_possible(
-        &self,
-        mutation: &mutation::AddEventMutation,
-    ) -> Result<(), String> {
+    pub fn validate_mutation(&self, mutation: &mutation::AddEventMutation) -> Result<(), String> {
         let stream_name = &StreamName::new(mutation.stream.to_string());
         let event_name = &EventName::new(mutation.event.to_string());
 
@@ -141,7 +138,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_is_mutation_possible_valid() {
+    fn test_validate_mutation_valid() {
         let schema = Schema {
             streams: HashMap::from([(
                 StreamName("account".to_string()),
@@ -186,14 +183,14 @@ mod tests {
             }],
         };
 
-        match schema.is_mutation_possible(&mutation) {
+        match schema.validate_mutation(&mutation) {
             Ok(_) => println!("success"),
             Err(e) => panic!("expected success. Got error {}", e),
         }
     }
 
     #[test]
-    fn test_is_mutation_possible_invalid_stream() {
+    fn test_validate_mutation_invalid_stream() {
         let schema = Schema {
             streams: HashMap::from([(
                 StreamName("account".to_string()),
@@ -238,14 +235,14 @@ mod tests {
             }],
         };
 
-        match schema.is_mutation_possible(&mutation) {
+        match schema.validate_mutation(&mutation) {
             Ok(_) => panic!("expected error"),
             Err(e) => println!("success. Got error {}", e),
         }
     }
 
     #[test]
-    fn test_is_mutation_possible_invalid_event() {
+    fn test_validate_mutation_invalid_event() {
         let schema = Schema {
             streams: HashMap::from([(
                 StreamName("account".to_string()),
@@ -290,14 +287,14 @@ mod tests {
             }],
         };
 
-        match schema.is_mutation_possible(&mutation) {
+        match schema.validate_mutation(&mutation) {
             Ok(_) => panic!("expected error"),
             Err(e) => println!("success. Got error {}", e),
         }
     }
 
     #[test]
-    fn test_is_mutation_possible_invalid_attribute() {
+    fn test_validate_mutation_invalid_attribute() {
         let schema = Schema {
             streams: HashMap::from([(
                 StreamName("account".to_string()),
@@ -342,7 +339,7 @@ mod tests {
             }],
         };
 
-        match schema.is_mutation_possible(&mutation) {
+        match schema.validate_mutation(&mutation) {
             Ok(_) => panic!("expected error"),
             Err(e) => println!("success. Got error {}", e),
         }

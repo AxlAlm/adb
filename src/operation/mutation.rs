@@ -2,7 +2,7 @@ use crate::ast::mutation::AddEventMutation;
 use crate::ast::schema::Schema;
 
 pub fn mutate(mutation: AddEventMutation, schema: &Schema) -> Result<String, String> {
-    schema.is_mutation_possible(&mutation)?;
+    schema.validate_mutation(&mutation)?;
     Ok("".to_string())
 }
 

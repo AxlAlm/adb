@@ -83,10 +83,9 @@ impl DB {
         };
     }
 
-    pub fn add(&self, event: Event) -> Result<(), DBError> {
+    pub fn add(&self, mut event: Event) -> Result<(), DBError> {
         let k = (event.stream.clone(), event.key.clone());
 
-        // Get clone of event stream
         let stream = {
             let streams = self
                 .streams
@@ -103,6 +102,10 @@ impl DB {
         if latest_version + 1 != event.version {
             return Err(DBError::AddError("version is not latest".to_string()));
         }
+
+        event.set_timestamp().map_err(|e| {
+            DBError::AddError(format!("failed to set timestamp: {}", e.to_string()))
+        })?;
 
         stream
             .write()

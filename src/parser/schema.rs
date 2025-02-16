@@ -210,8 +210,6 @@ pub fn parse(input: &str) -> Result<Schema, SchemaParserError> {
         let block_type = extract_block_type(&block)?;
         let values = extract_fields(&block)?;
 
-        dbg!(&block_type, &values);
-
         if block_type == "stream" {
             let stream = create_stream(values)?;
             streams.insert(stream.name.clone(), stream);

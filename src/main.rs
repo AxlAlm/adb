@@ -1,10 +1,3 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, RwLock},
-};
-
-use db::{Streams, DB};
-
 mod ast;
 mod db;
 mod operation;
@@ -33,18 +26,7 @@ attribute(accounts, AccountCreated, owner-name, true, string);
 
     dbg!(&schema);
     dbg!(&mutations);
-
-    // #[derive(Debug)]
-    // pub struct Streams(HashMap<(String, String), Arc<RwLock<Vec<Event>>>>);
-
-    // #[derive(Debug)]
-    // pub struct DB {
-    //     pub streams: Arc<RwLock<Streams>>,
-    // }
-
-    let db = DB {
-        streams: Arc::new(RwLock::new(Streams(HashMap::new()))),
-    };
+    let db = db::DB::new();
 
     for mutation in mutations {
         match operation::mutation::mutate(mutation, &schema, &db) {

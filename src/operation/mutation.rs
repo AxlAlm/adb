@@ -1,9 +1,18 @@
 use crate::ast::mutation::AddEventMutation;
 use crate::ast::schema::Schema;
+use crate::db::{Event, DB};
 
-pub fn mutate(mutation: AddEventMutation, schema: &Schema) -> Result<String, String> {
+pub fn mutate(mutation: AddEventMutation, schema: &Schema, db: &DB) -> Result<(), String> {
     schema.validate_mutation(&mutation)?;
-    Ok("".to_string())
+    let version = db
+        .get_latest_version(mutation.stream.to_string(), mutation.key.to_string())
+        .map_err(|e| e.to_string())?;
+
+    let new_version = version + 1;
+    let event = Event::new(mutation, new_version);
+
+    db.add(event).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -12,9 +21,8 @@ mod tests {
     use crate::ast::mutation;
     use crate::ast::schema;
 
-    use std::collections::HashMap;
-
     use super::*;
+    use std::collections::HashMap;
 
     #[test]
     fn test_mutate_valid() {
@@ -62,7 +70,8 @@ mod tests {
             }],
         };
 
-        match mutate(mutation, &schema) {
+        let db = DB::new();
+        match mutate(mutation, &schema, &db) {
             Ok(_) => println!("Success"),
             Err(e) => panic!("Failed. Got error {}", e),
         }
@@ -114,7 +123,8 @@ mod tests {
             }],
         };
 
-        match mutate(mutation, &schema) {
+        let db = DB::new();
+        match mutate(mutation, &schema, &db) {
             Ok(_) => panic!("expected error"),
             Err(e) => println!("success. Got error {}", e),
         }

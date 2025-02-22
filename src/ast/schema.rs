@@ -85,13 +85,13 @@ pub struct Event {
     pub stream_name: StreamName,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Stream {
     pub name: StreamName,
     pub key: String,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Default, Clone)]
 pub struct Schema {
     pub streams: HashMap<StreamName, Stream>,
     pub events: HashMap<(StreamName, EventName), Event>,

@@ -1,24 +1,32 @@
-use crate::ast::mutation::AddEventMutation;
-use crate::ast::schema::Schema;
 use crate::db::{Event, DB};
+use crate::parser;
 
-pub fn mutate(mutation: AddEventMutation, schema: &Schema, db: &DB) -> Result<(), String> {
-    schema.validate_mutation(&mutation)?;
-    let version = db
-        .get_latest_version(mutation.stream.to_string(), mutation.key.to_string())
-        .map_err(|e| e.to_string())?;
+// TODO! FIX ERROR HANDLING HERE
+pub fn mutate(input: &str, db: &DB) -> Result<(), String> {
+    let mutations = match parser::mutation::parse(input) {
+        Ok(x) => x,
+        Err(_) => panic!("failed to parse mutation"),
+    };
 
-    let new_version = version + 1;
-    let event = Event::new(mutation, new_version);
+    for mutation in mutations {
+        let schema = db.get_schema().map_err(|e| e.to_string())?;
+        schema.validate_mutation(&mutation)?;
+        let version = db
+            .get_latest_version(mutation.stream.to_string(), mutation.key.to_string())
+            .map_err(|e| e.to_string())?;
 
-    db.add(event).map_err(|e| e.to_string())?;
+        let new_version = version + 1;
+        let event = Event::new(mutation, new_version);
+
+        db.add(event).map_err(|e| e.to_string())?;
+    }
+
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
 
-    use crate::ast::mutation;
     use crate::ast::schema;
 
     use super::*;
@@ -26,7 +34,7 @@ mod tests {
 
     #[test]
     fn test_mutate_valid() {
-        let schema = Schema {
+        let schema = schema::Schema {
             streams: HashMap::from([(
                 schema::StreamName("account".to_string()),
                 schema::Stream {
@@ -60,18 +68,13 @@ mod tests {
             )]),
         };
 
-        let mutation = mutation::AddEventMutation {
-            stream: "account".to_string(),
-            key: "123".to_string(),
-            event: "AccountCreated".to_string(),
-            attributes: vec![mutation::Attribute {
-                name: "owner-name".to_string(),
-                value: "axel".to_string(),
-            }],
-        };
+        let input = r#"
+        ADD AccountCreated(owner-name="axel") TO account:123
+    "#;
 
-        let db = DB::new();
-        match mutate(mutation, &schema, &db) {
+        let db = DB::new(Some(schema));
+
+        match mutate(input, &db) {
             Ok(_) => println!("Success"),
             Err(e) => panic!("Failed. Got error {}", e),
         }
@@ -79,7 +82,7 @@ mod tests {
 
     #[test]
     fn test_mutate_stream_invalid() {
-        let schema = Schema {
+        let schema = schema::Schema {
             streams: HashMap::from([(
                 schema::StreamName("account".to_string()),
                 schema::Stream {
@@ -113,18 +116,13 @@ mod tests {
             )]),
         };
 
-        let mutation = mutation::AddEventMutation {
-            stream: "NON_EXISTENT_STREAM".to_string(),
-            key: "123".to_string(),
-            event: "AccountCreated".to_string(),
-            attributes: vec![mutation::Attribute {
-                name: "owner-name".to_string(),
-                value: "axel".to_string(),
-            }],
-        };
+        let input = r#"
+        ADD AccountCreated(owner-name="axel") TO NON_EXISTENT_STREAM:123
+    "#;
 
-        let db = DB::new();
-        match mutate(mutation, &schema, &db) {
+        let db = DB::new(Some(schema));
+
+        match mutate(input, &db) {
             Ok(_) => panic!("expected error"),
             Err(e) => println!("success. Got error {}", e),
         }

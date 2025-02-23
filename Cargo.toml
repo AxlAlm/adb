@@ -1,9 +1,10 @@
-[package]
-name = "adb"
-version = "0.1.0"
-edition = "2021"
+[workspace]
+members = [ 
+    "service/cli",
+    "service/db",
+]
+resolver = "2"
 
-[dependencies]
-mio = "1.0.3"
-pretty_assertions = "1.4.1"
-tokio = { version="1.43.0", features = ["full", "time", "test-util","rt", "macros"]}
+# [workspace.dependencies]
+# filter = { path = "libs/filter" }
+

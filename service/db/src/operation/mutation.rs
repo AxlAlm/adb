@@ -9,6 +9,10 @@ pub fn mutate(input: &str, db: &DB) -> Result<(), String> {
         Err(_) => panic!("failed to parse mutation"),
     };
 
+    if mutations.len() == 0 {
+        return Err("No mutations found".to_string());
+    }
+
     for mutation in mutations {
         db.get_schema()
             .map_err(|e| e.to_string())?

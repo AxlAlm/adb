@@ -1,38 +1,98 @@
 mod ast;
+mod client;
 mod db;
 mod event;
 mod operation;
 mod parser;
+use std::sync::Arc;
 
-fn main() {
-    let db = db::DB::new(None);
+// fn main() {
+//     connect();
+
+//     //     let db = db::DB::new(None);
+
+//     //     let input_migration = r#"
+//     // stream(accounts, account-id);
+//     // event(accounts, AccountCreated);
+//     // attribute(accounts, AccountCreated, owner-name, true, string);
+//     //     "#;
+
+//     //     match operation::migration::migrate(&input_migration, &db) {
+//     //         Ok(_) => println!("migration done"),
+//     //         Err(_) => panic!("failed to parse schema"),
+//     //     };
+
+//     //     let mutatation_input = r#"
+//     //         ADD AccountCreated(owner-name="axel") TO accounts:123
+//     //     "#;
+
+//     //     for _ in 0..5 {
+//     //         match operation::mutation::mutate(mutatation_input, &db) {
+//     //             Ok(_) => println!("mutation done"),
+//     //             Err(e) => panic!("failed to mutate. {}", e),
+//     //         }
+//     //     }
+
+//     //     let events = db
+//     //         .get_events("accounts".to_string(), "123".to_string())
+//     //         .unwrap();
+//     //     dbg!(events);
+// }
+//
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let db = Arc::new(db::DB::new(None));
 
     let input_migration = r#"
-stream(accounts, account-id);
-event(accounts, AccountCreated);
-attribute(accounts, AccountCreated, owner-name, true, string);
-    "#;
+    stream(accounts, account-id);
+    event(accounts, AccountCreated);
+    attribute(accounts, AccountCreated, owner-name, true, string);
+        "#;
 
-    match operation::migration::migrate(&input_migration, &db) {
-        Ok(_) => println!("migration done"),
-        Err(_) => panic!("failed to parse schema"),
-    };
+    let listener = TcpListener::bind("127.0.0.1:8080").await?;
+    println!("Server listening on port 8080");
 
-    let mutatation_input = r#"
-        ADD AccountCreated(owner-name="axel") TO accounts:123
-    "#;
+    loop {
+        let (socket, addr) = listener.accept().await?;
+        println!("New connection from: {}", addr);
 
-    for _ in 0..5 {
-        match operation::mutation::mutate(mutatation_input, &db) {
-            Ok(_) => println!("mutation done"),
-            Err(e) => panic!("failed to mutate. {}", e),
+        let db = db.clone();
+        tokio::spawn(async move { handle_connection(socket, db).await });
+    }
+}
+
+async fn handle_connection(mut socket: TcpStream, db: Arc<db::DB>) {
+    loop {
+        let mut buffer = [0; 1024];
+        match socket.read(&mut buffer).await {
+            Ok(n) if n == 0 => {
+                println!("Connection closed by client");
+                return;
+            }
+            Ok(n) => {
+                let msg = String::from_utf8_lossy(&buffer[..n]);
+                println!("Received: {}", msg);
+
+                let msg = match operation::mutation::mutate(&msg, &db) {
+                    Ok(_) => "mutation done".to_string(),
+                    Err(e) => format!("failed to mutate. {}", e),
+                };
+
+                let return_msg = msg.to_string().into_bytes();
+                if let Err(e) = socket.write(&return_msg).await {
+                    eprintln!("Failed to send response: {}", e);
+                    return;
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to read from connection: {}", e);
+                return;
+            }
         }
     }
-
-    let events = db
-        .get_events("accounts".to_string(), "123".to_string())
-        .unwrap();
-    dbg!(events);
 }
 
 #[cfg(test)]

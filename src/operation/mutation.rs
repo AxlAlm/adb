@@ -1,4 +1,5 @@
-use crate::db::{Event, DB};
+use crate::db::DB;
+use crate::event::Event;
 use crate::parser;
 
 // TODO! FIX ERROR HANDLING HERE
@@ -9,16 +10,20 @@ pub fn mutate(input: &str, db: &DB) -> Result<(), String> {
     };
 
     for mutation in mutations {
-        let schema = db.get_schema().map_err(|e| e.to_string())?;
-        schema.validate_mutation(&mutation)?;
-        let version = db
-            .get_latest_version(mutation.stream.to_string(), mutation.key.to_string())
-            .map_err(|e| e.to_string())?;
+        db.get_schema()
+            .map_err(|e| e.to_string())?
+            .validate_mutation(&mutation)?;
 
-        let new_version = version + 1;
-        let event = Event::new(mutation, new_version);
+        let latest_version = db
+            .get_events(mutation.stream.to_string(), mutation.key.to_string())
+            .map_err(|e| e.to_string())?
+            .unwrap_or_default()
+            .last()
+            .map_or(0, |event| event.version);
 
-        db.add(event).map_err(|e| e.to_string())?;
+        let new_version = latest_version + 1;
+        let event = Event::new(mutation, new_version)?;
+        db.add_event(event).map_err(|e| e.to_string())?;
     }
 
     Ok(())

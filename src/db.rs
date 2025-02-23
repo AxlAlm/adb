@@ -1,59 +1,10 @@
+use crate::ast::schema::Schema;
+use crate::event::Event;
+
 use core::fmt;
 use std::collections::HashMap;
 
-use std::default;
 use std::sync::{Arc, RwLock};
-use std::time::{SystemTime, UNIX_EPOCH};
-
-use crate::ast::schema::Schema;
-use crate::ast::{mutation, schema};
-// use crate::ast::{mutation::AddEventMutation, schema::StreamName};
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Event {
-    pub stream: String,
-    pub key: String,
-    pub event: String,
-    pub version: u64,
-    pub timestamp: u128,
-    pub attributes: Vec<Attribute>,
-}
-
-impl Event {
-    pub fn new(mutation: mutation::AddEventMutation, version: u64) -> Self {
-        return Event {
-            stream: mutation.stream.to_string(),
-            key: mutation.key.to_string(),
-            event: mutation.event.to_string(),
-            version,
-            timestamp: 0, // will be filled on insert
-            attributes: mutation.attributes.into_iter().map(Into::into).collect(),
-        };
-    }
-
-    pub fn set_timestamp(&mut self) -> Result<(), String> {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|e| e.to_string())?;
-        self.timestamp = now.as_millis();
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Attribute {
-    pub name: String,
-    pub value: String,
-}
-
-impl From<mutation::Attribute> for Attribute {
-    fn from(a: mutation::Attribute) -> Self {
-        Attribute {
-            name: a.name,
-            value: a.value,
-        }
-    }
-}
 
 #[derive(Debug)]
 pub enum DBError {
@@ -108,13 +59,10 @@ impl DB {
         let schema = self.schema.read().map_err(|e| {
             DBError::ReadError(format!("failed to read streams: {}", e.to_string()))
         })?;
-
-        dbg!(&schema);
-
         return Ok(schema.clone());
     }
 
-    pub fn add(&self, mut event: Event) -> Result<(), DBError> {
+    pub fn add_event(&self, event: Event) -> Result<(), DBError> {
         let k = (event.stream.clone(), event.key.clone());
         let stream = {
             let mut streams = self
@@ -125,14 +73,17 @@ impl DB {
             stream.clone()
         };
 
-        let latest_version = self.get_latest_version(event.stream.clone(), event.key.clone())?;
-        if latest_version + 1 != event.version {
-            return Err(DBError::AddError("version is not latest".to_string()));
-        }
+        let last_version = stream
+            .read()
+            .map_err(|_| DBError::AddError("failed to read streams".to_string()))?
+            .last()
+            .map_or(0, |e| e.version);
 
-        event.set_timestamp().map_err(|e| {
-            DBError::AddError(format!("failed to set timestamp: {}", e.to_string()))
-        })?;
+        if event.version != last_version + 1 {
+            return Err(DBError::AddError(
+                "failed to add event as verion is not serial".to_string(),
+            ));
+        }
 
         stream
             .write()
@@ -141,38 +92,24 @@ impl DB {
         Ok(())
     }
 
-    pub fn get_latest(&self, stream_name: String, key: String) -> Result<Option<Event>, DBError> {
+    pub fn get_events(
+        &self,
+        stream_name: String,
+        key: String,
+    ) -> Result<Option<Vec<Event>>, DBError> {
         let streams = self.streams.read().map_err(|e| {
             DBError::ReadError(format!("failed to read streams: {}", e.to_string()))
         })?;
+
         match streams.0.get(&(stream_name, key)) {
             Some(events_lock) => {
                 let events = events_lock.read().map_err(|e| {
                     DBError::ReadError(format!("failed to read event stream: {}", e.to_string()))
                 })?;
-                Ok(events.last().cloned())
+                Ok(Some(events.clone()))
             }
             None => Ok(None),
         }
-    }
-
-    pub fn get_events(&self, stream_name: String, key: String) -> Result<Vec<Event>, DBError> {
-        let streams = self.streams.read().map_err(|e| {
-            DBError::ReadError(format!("failed to read streams: {}", e.to_string()))
-        })?;
-        match streams.0.get(&(stream_name, key)) {
-            Some(events_lock) => {
-                let events = events_lock.read().map_err(|e| {
-                    DBError::ReadError(format!("failed to read event stream: {}", e.to_string()))
-                })?;
-                Ok(events.clone())
-            }
-            None => return Err(DBError::ReadError(format!("failed to read events"))),
-        }
-    }
-
-    pub fn get_latest_version(&self, stream_name: String, key: String) -> Result<u64, DBError> {
-        return Ok(self.get_latest(stream_name, key)?.map_or(0, |e| e.version));
     }
 }
 
@@ -180,6 +117,9 @@ impl DB {
 mod tests {
 
     use super::*;
+    use crate::ast::schema;
+    use crate::event::{Attribute, Event};
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn test_db() {
@@ -237,33 +177,21 @@ mod tests {
             timestamp: now.as_millis(),
         };
 
-        match db.add(event.clone()) {
+        match db.add_event(event.clone()) {
             Ok(_) => (),
             Err(e) => panic!("failed to add event: {}", e),
         }
 
-        let got = match db.get_latest(stream_name.clone(), key.clone()) {
-            Ok(e) => e,
+        let got = match db.get_events(stream_name.clone(), key.clone()) {
+            Ok(e) => e.unwrap(),
             Err(e) => panic!("failed to add event: {}", e),
         };
 
-        if got.is_none() {
-            panic!("get_latest returned None")
+        if got.len() != 1 {
+            panic!("event stream is empty. expected one event")
         }
 
-        assert_eq!(event, got.unwrap());
-
-        let got_latest_verion = match db.get_latest_version(stream_name, key) {
-            Ok(e) => e,
-            Err(e) => panic!("failed to add event: {}", e),
-        };
-
-        if got_latest_verion != event.version {
-            panic!(
-                "got latest version {}, expected {}",
-                got_latest_verion, event.version
-            )
-        }
+        assert_eq!(event, got[0]);
     }
 
     #[test]
@@ -327,7 +255,7 @@ mod tests {
             timestamp: now.as_millis(),
         };
 
-        match db.add(event.clone()) {
+        match db.add_event(event.clone()) {
             Ok(_) => (),
             Err(e) => panic!("failed to add event: {}", e),
         }
@@ -394,12 +322,12 @@ mod tests {
             timestamp: now.as_millis(),
         };
 
-        match db.add(event.clone()) {
+        match db.add_event(event.clone()) {
             Ok(_) => (),
             Err(e) => panic!("failed to add event: {}", e),
         }
 
-        match db.add(event.clone()) {
+        match db.add_event(event.clone()) {
             Ok(_) => panic!("expected failure to add event due to version incorrect"),
             Err(e) => println!("failed to add event: {}", e),
         }

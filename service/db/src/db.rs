@@ -1,4 +1,4 @@
-use crate::ast::schema::Schema;
+use crate::ast::schema;
 use crate::event::Event;
 
 use core::fmt;
@@ -9,6 +9,7 @@ use std::sync::{Arc, RwLock};
 #[derive(Debug)]
 pub enum DBError {
     AddError(String),
+    CreateError(String),
     ReadError(String),
     MigrateError(String),
 }
@@ -17,6 +18,7 @@ impl fmt::Display for DBError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             DBError::AddError(msg) => write!(f, "Add Error: {}", msg),
+            DBError::CreateError(msg) => write!(f, "Create Error: {}", msg),
             DBError::ReadError(msg) => write!(f, "Read Error: {}", msg),
             DBError::MigrateError(msg) => write!(f, "Migrate Error: {}", msg),
         }
@@ -29,11 +31,11 @@ pub struct Streams(pub HashMap<(String, String), Arc<RwLock<Vec<Event>>>>);
 #[derive(Debug)]
 pub struct DB {
     pub streams: Arc<RwLock<Streams>>,
-    pub schema: Arc<RwLock<Schema>>,
+    pub schema: Arc<RwLock<schema::Schema>>,
 }
 
 impl DB {
-    pub fn new(base_schema: Option<Schema>) -> Self {
+    pub fn new(base_schema: Option<schema::Schema>) -> Self {
         let schema = base_schema.unwrap_or(Default::default());
 
         return DB {
@@ -42,20 +44,32 @@ impl DB {
         };
     }
 
-    // // TODO! make migration less naive?
-    // // migration currently completely overwrites previous
-    // pub fn migrate(&self, schema: Schema) -> Result<(), DBError> {
-    //     let mut current_schema = self
-    //         .schema
-    //         .write()
-    //         .map_err(|e| DBError::MigrateError(e.to_string()))?;
-    //     current_schema.streams = schema.streams;
-    //     current_schema.events = schema.events;
-    //     current_schema.attributes = schema.attributes;
-    //     Ok(())
-    // }
+    pub fn create_stream(&self, stream: schema::Stream) -> Result<(), DBError> {
+        Ok(())
+    }
 
-    pub fn get_schema(&self) -> Result<Schema, DBError> {
+    pub fn create_event(&self, event: schema::Event) -> Result<(), DBError> {
+        Ok(())
+    }
+
+    pub fn create_attribute(&self, attribute: schema::Attribute) -> Result<(), DBError> {
+        Ok(())
+    }
+
+    // TODO! make migration less naive?
+    // migration currently completely overwrites previous
+    pub fn migrate(&self, schema: schema::Schema) -> Result<(), DBError> {
+        let mut current_schema = self
+            .schema
+            .write()
+            .map_err(|e| DBError::MigrateError(e.to_string()))?;
+        current_schema.streams = schema.streams;
+        current_schema.events = schema.events;
+        current_schema.attributes = schema.attributes;
+        Ok(())
+    }
+
+    pub fn get_schema(&self) -> Result<schema::Schema, DBError> {
         let schema = self.schema.read().map_err(|e| {
             DBError::ReadError(format!("failed to read streams: {}", e.to_string()))
         })?;

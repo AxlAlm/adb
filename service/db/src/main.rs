@@ -45,12 +45,6 @@ use tokio::net::{TcpListener, TcpStream};
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db = Arc::new(db::DB::new(None));
 
-    let input_migration = r#"
-    stream(accounts, account-id);
-    event(accounts, AccountCreated);
-    attribute(accounts, AccountCreated, owner-name, true, string);
-        "#;
-
     let listener = TcpListener::bind("127.0.0.1:8080").await?;
     println!("Server listening on port 8080");
 
@@ -98,6 +92,7 @@ async fn handle_connection(mut socket: TcpStream, db: Arc<db::DB>) {
 mod tests {
     use crate::ast::schema;
     use crate::db::DB;
+    use crate::operation::add::add;
 
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Arc;
@@ -159,7 +154,7 @@ mod tests {
                 let end_time = tokio::time::Instant::now() + Duration::from_secs(2);
 
                 while tokio::time::Instant::now() < end_time {
-                    match mutate(&input, &db) {
+                    match add(&input, &db) {
                         Ok(()) => {}
                         Err(_e) => {
                             failed_write_counter.fetch_add(1, Ordering::Relaxed);
@@ -184,7 +179,7 @@ mod tests {
                 let end_time = tokio::time::Instant::now() + Duration::from_secs(2);
 
                 while tokio::time::Instant::now() < end_time {
-                    match mutate(&input, &db) {
+                    match add(&input, &db) {
                         Ok(()) => {}
                         Err(_e) => {
                             failed_write_counter.fetch_add(1, Ordering::Relaxed);
@@ -209,7 +204,7 @@ mod tests {
                 let end_time = tokio::time::Instant::now() + Duration::from_secs(2);
 
                 while tokio::time::Instant::now() < end_time {
-                    match mutate(&input, &db) {
+                    match add(&input, &db) {
                         Ok(()) => {}
                         Err(_e) => {
                             failed_write_counter.fetch_add(1, Ordering::Relaxed);
@@ -283,7 +278,7 @@ mod tests {
                 let end_time = tokio::time::Instant::now() + Duration::from_secs(2);
 
                 while tokio::time::Instant::now() < end_time {
-                    match mutate(&input, &db) {
+                    match add(&input, &db) {
                         Ok(()) => {}
                         Err(_e) => {
                             failed_write_counter.fetch_add(1, Ordering::Relaxed);

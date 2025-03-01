@@ -1,4 +1,5 @@
-use crate::dbs;
+use crate::ast::schema::{Attribute, Event, Stream};
+use crate::db::{self, DBError};
 
 const BLOCK_SEPERATOR: &str = ";";
 const FIELDS_OPENER: &str = "(";
@@ -9,43 +10,33 @@ const COMMENT_OPENER: &str = "//";
 #[derive(Debug)]
 pub enum CreateError {
     ParseError(String),
+    CreateError(String),
     CreateStreamError(String),
     CreateEventError(String),
     CreateAttributeError(String),
 }
 
+impl From<DBError> for CreateError {
+    fn from(error: DBError) -> Self {
+        CreateError::CreateError(error.to_string())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum CreateOperation {
-    CreateStream(CreateStream),
-    CreateEvent(CreateEvent),
-    CreateAttribute(CreateAttribute),
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct CreateStream {
-    pub name: String,
-    pub key: String,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct CreateEvent {
-    pub name: String,
-    pub stream_name: String,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct CreateAttribute {
-    pub name: String,
-    pub event_name: String,
-    pub stream_name: String,
-    pub required: bool,
-    pub attribute_type: String,
+    CreateStream(Stream),
+    CreateEvent(Event),
+    CreateAttribute(Attribute),
 }
 
 pub fn create(input: &str, db: &db::DB) -> Result<(), CreateError> {
-    let create_operation = parse(input)?;
-    // db.migrate(schema).map_err(|e| e.to_string())?;
-    return Ok(());
+    let op = parse(input)?;
+    match op {
+        CreateOperation::CreateStream(op) => db.create_stream(op)?,
+        CreateOperation::CreateEvent(op) => db.create_event(op)?,
+        CreateOperation::CreateAttribute(op) => db.create_attribute(op)?,
+    };
+    Ok(())
 }
 
 // stream(...)  -> stream
@@ -79,7 +70,7 @@ fn extract_fields(input: &str) -> Result<Vec<&str>, CreateError> {
 }
 
 // test, test-id -> stream {name: test, key:test-id}
-fn create_stream(values: Vec<&str>) -> Result<CreateStream, CreateError> {
+fn create_stream(values: Vec<&str>) -> Result<Stream, CreateError> {
     if values.len() != 2 {
         return Err(CreateError::CreateStreamError(format!(
             "unable to create stream from '{:?}'",
@@ -101,14 +92,14 @@ fn create_stream(values: Vec<&str>) -> Result<CreateStream, CreateError> {
         ));
     }
 
-    Ok(CreateStream {
+    Ok(Stream {
         name: name.to_string(),
         key,
     })
 }
 
 // test-stream, test -> event {stream: test-stream, name: test}
-fn create_event(values: Vec<&str>) -> Result<CreateEvent, CreateError> {
+fn create_event(values: Vec<&str>) -> Result<Event, CreateError> {
     if values.len() != 2 {
         return Err(CreateError::CreateEventError(format!(
             "unable to create event from '{:?}'",
@@ -130,7 +121,7 @@ fn create_event(values: Vec<&str>) -> Result<CreateEvent, CreateError> {
         ));
     }
 
-    Ok(CreateEvent {
+    Ok(Event {
         name: name.to_string(),
         stream_name: stream_name.to_string(),
     })
@@ -138,7 +129,7 @@ fn create_event(values: Vec<&str>) -> Result<CreateEvent, CreateError> {
 
 // test-event, test, true, string ->
 // attribute {event: event-name, name: test, required: true, attribute_type: str}
-fn create_attribute(values: Vec<&str>) -> Result<CreateAttribute, CreateError> {
+fn create_attribute(values: Vec<&str>) -> Result<Attribute, CreateError> {
     if values.len() != 5 {
         return Err(CreateError::CreateAttributeError(format!(
             "attribute is missing fields. Unable to create attribute from '{:?}'",
@@ -192,7 +183,7 @@ fn create_attribute(values: Vec<&str>) -> Result<CreateAttribute, CreateError> {
         ));
     }
 
-    Ok(CreateAttribute {
+    Ok(Attribute {
         stream_name: stream_name.to_string(),
         event_name: event_name.to_string(),
         name: name.to_string(),
@@ -250,7 +241,7 @@ mod parse_tests {
             }
         };
 
-        let expected = CreateOperation::CreateStream(CreateStream {
+        let expected = CreateOperation::CreateStream(Stream {
             name: "account".to_string(),
             key: "account-id".to_string(),
         });
@@ -270,7 +261,7 @@ mod parse_tests {
             }
         };
 
-        let expected = CreateOperation::CreateEvent(CreateEvent {
+        let expected = CreateOperation::CreateEvent(Event {
             name: "AccountCreated".to_string(),
             stream_name: "account".to_string(),
         });
@@ -290,7 +281,7 @@ mod parse_tests {
             }
         };
 
-        let expected = CreateOperation::CreateAttribute(CreateAttribute {
+        let expected = CreateOperation::CreateAttribute(Attribute {
             name: "owner-name".to_string(),
             event_name: "AccountCreated".to_string(),
             stream_name: "account".to_string(),

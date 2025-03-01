@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const BLOCK_SEPERATOR: &str = ";";
 const FIELDS_OPENER: &str = "(";
 const FIELDS_CLOSER: &str = ")";
-const COMMENT_OPENER: &str = "//";
+// const COMMENT_OPENER: &str = "//";
 
 const ADD_OP_OPENER: &str = "ADD";
 const STREAM_INDICATOR: &str = "TO";
@@ -14,6 +14,7 @@ const STREAM_INDICATOR: &str = "TO";
 #[derive(Debug)]
 pub enum AddError {
     AddError(String),
+    ValidationError(String),
     ParseError(String),
 }
 
@@ -28,6 +29,7 @@ impl fmt::Display for AddError {
         match self {
             AddError::AddError(msg) => write!(f, "Add Error: {}", msg),
             AddError::ParseError(msg) => write!(f, "Parse Error: {}", msg),
+            AddError::ValidationError(msg) => write!(f, "Validation Error: {}", msg),
         }
     }
 }
@@ -57,7 +59,47 @@ impl From<AddEventAttribute> for Attribute {
 
 pub fn add(input: &str, db: &DB) -> Result<(), AddError> {
     let add_ops = parse(input)?;
-    db.get_schema()?.validate_add_operation(&add_ops)?;
+    let schema = db.get_schema()?;
+
+    if !schema.stream_exists(&add_ops.stream) {
+        return Err(AddError::ValidationError(format!(
+            "stream '{}' not found",
+            add_ops.stream
+        )));
+    }
+
+    if !schema.event_exists(&(add_ops.stream.clone(), add_ops.event.clone())) {
+        return Err(AddError::ValidationError(format!(
+            "event '{:?}' not found",
+            (add_ops.stream, add_ops.event)
+        )));
+    }
+    let missing_attributes: Vec<(String, String, String)> = add_ops
+        .attributes
+        .iter()
+        .filter(|a| {
+            !schema.attribute_exits(&(
+                add_ops.stream.clone(),
+                add_ops.event.clone(),
+                a.name.clone(),
+            ))
+        })
+        .map(|a| {
+            (
+                add_ops.stream.clone(),
+                add_ops.event.clone(),
+                a.name.clone(),
+            )
+        })
+        .collect();
+
+    if !missing_attributes.is_empty() {
+        return Err(AddError::ValidationError(format!(
+            "attributes '{:?}' not found",
+            missing_attributes
+        )));
+    }
+
     let latest_version = db
         .get_events(add_ops.stream.to_string(), add_ops.key.to_string())?
         .unwrap_or_default()

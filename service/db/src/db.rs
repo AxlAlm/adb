@@ -42,18 +42,18 @@ impl DB {
         };
     }
 
-    // TODO! make migration less naive?
-    // migration currently completely overwrites previous
-    pub fn migrate(&self, schema: Schema) -> Result<(), DBError> {
-        let mut current_schema = self
-            .schema
-            .write()
-            .map_err(|e| DBError::MigrateError(e.to_string()))?;
-        current_schema.streams = schema.streams;
-        current_schema.events = schema.events;
-        current_schema.attributes = schema.attributes;
-        Ok(())
-    }
+    // // TODO! make migration less naive?
+    // // migration currently completely overwrites previous
+    // pub fn migrate(&self, schema: Schema) -> Result<(), DBError> {
+    //     let mut current_schema = self
+    //         .schema
+    //         .write()
+    //         .map_err(|e| DBError::MigrateError(e.to_string()))?;
+    //     current_schema.streams = schema.streams;
+    //     current_schema.events = schema.events;
+    //     current_schema.attributes = schema.attributes;
+    //     Ok(())
+    // }
 
     pub fn get_schema(&self) -> Result<Schema, DBError> {
         let schema = self.schema.read().map_err(|e| {
@@ -117,40 +117,37 @@ impl DB {
 mod tests {
 
     use super::*;
-    use crate::ast::schema;
-    use crate::event::{Attribute, Event};
+    use crate::ast::schema::{Attribute, Event, Schema, Stream};
+    use crate::event;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn test_db() {
-        let schema = schema::Schema {
+        let schema = Schema {
             streams: HashMap::from([(
-                schema::StreamName("account".to_string()),
-                schema::Stream {
-                    name: schema::StreamName("account".to_string()),
+                "account".to_string(),
+                Stream {
+                    name: "account".to_string(),
                     key: "account-id".to_string(),
                 },
             )]),
             events: HashMap::from([(
-                (
-                    schema::StreamName("account".to_string()),
-                    schema::EventName("AccountCreated".to_string()),
-                ),
-                schema::Event {
-                    name: schema::EventName("AccountCreated".to_string()),
-                    stream_name: schema::StreamName("account".to_string()),
+                ("account".to_string(), "AccountCreated".to_string()),
+                Event {
+                    name: "AccountCreated".to_string(),
+                    stream_name: "account".to_string(),
                 },
             )]),
             attributes: HashMap::from([(
                 (
-                    schema::StreamName("account".to_string()),
-                    schema::EventName("AccountCreated".to_string()),
-                    schema::AttributeName("owner-name".to_string()),
+                    "account".to_string(),
+                    "AccountCreated".to_string(),
+                    "owner-name".to_string(),
                 ),
-                schema::Attribute {
-                    name: schema::AttributeName("owner-name".to_string()),
-                    event_name: schema::EventName("AccountCreated".to_string()),
-                    stream_name: schema::StreamName("account".to_string()),
+                Attribute {
+                    name: "owner-name".to_string(),
+                    event_name: "AccountCreated".to_string(),
+                    stream_name: "account".to_string(),
                     required: true,
                     attribute_type: "string".to_string(),
                 },
@@ -165,11 +162,11 @@ mod tests {
 
         let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
 
-        let event = Event {
+        let event = event::Event {
             stream: stream_name.clone(),
             key: key.clone(),
             event: event_name.clone(),
-            attributes: vec![Attribute {
+            attributes: vec![event::Attribute {
                 name: "owner-name".to_string(),
                 value: "axel".to_string(),
             }],
@@ -196,34 +193,31 @@ mod tests {
 
     #[test]
     fn test_db_migrate() {
-        let schema = schema::Schema {
+        let schema = Schema {
             streams: HashMap::from([(
-                schema::StreamName("account".to_string()),
-                schema::Stream {
-                    name: schema::StreamName("account".to_string()),
+                "account".to_string(),
+                Stream {
+                    name: "account".to_string(),
                     key: "account-id".to_string(),
                 },
             )]),
             events: HashMap::from([(
-                (
-                    schema::StreamName("account".to_string()),
-                    schema::EventName("AccountCreated".to_string()),
-                ),
-                schema::Event {
-                    name: schema::EventName("AccountCreated".to_string()),
-                    stream_name: schema::StreamName("account".to_string()),
+                ("account".to_string(), "AccountCreated".to_string()),
+                Event {
+                    name: "AccountCreated".to_string(),
+                    stream_name: "account".to_string(),
                 },
             )]),
             attributes: HashMap::from([(
                 (
-                    schema::StreamName("account".to_string()),
-                    schema::EventName("AccountCreated".to_string()),
-                    schema::AttributeName("owner-name".to_string()),
+                    "account".to_string(),
+                    "AccountCreated".to_string(),
+                    "owner-name".to_string(),
                 ),
-                schema::Attribute {
-                    name: schema::AttributeName("owner-name".to_string()),
-                    event_name: schema::EventName("AccountCreated".to_string()),
-                    stream_name: schema::StreamName("account".to_string()),
+                Attribute {
+                    name: "owner-name".to_string(),
+                    event_name: "AccountCreated".to_string(),
+                    stream_name: "account".to_string(),
                     required: true,
                     attribute_type: "string".to_string(),
                 },
@@ -243,11 +237,11 @@ mod tests {
 
         let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
 
-        let event = Event {
+        let event = event::Event {
             stream: stream_name.clone(),
             key: key.clone(),
             event: event_name.clone(),
-            attributes: vec![Attribute {
+            attributes: vec![event::Attribute {
                 name: "owner-name".to_string(),
                 value: "axel".to_string(),
             }],
@@ -263,34 +257,31 @@ mod tests {
 
     #[test]
     fn test_ensure_serial_version() {
-        let schema = schema::Schema {
+        let schema = Schema {
             streams: HashMap::from([(
-                schema::StreamName("account".to_string()),
-                schema::Stream {
-                    name: schema::StreamName("account".to_string()),
+                "account".to_string(),
+                Stream {
+                    name: "account".to_string(),
                     key: "account-id".to_string(),
                 },
             )]),
             events: HashMap::from([(
-                (
-                    schema::StreamName("account".to_string()),
-                    schema::EventName("AccountCreated".to_string()),
-                ),
-                schema::Event {
-                    name: schema::EventName("AccountCreated".to_string()),
-                    stream_name: schema::StreamName("account".to_string()),
+                ("account".to_string(), "AccountCreated".to_string()),
+                Event {
+                    name: "AccountCreated".to_string(),
+                    stream_name: "account".to_string(),
                 },
             )]),
             attributes: HashMap::from([(
                 (
-                    schema::StreamName("account".to_string()),
-                    schema::EventName("AccountCreated".to_string()),
-                    schema::AttributeName("owner-name".to_string()),
+                    "account".to_string(),
+                    "AccountCreated".to_string(),
+                    "owner-name".to_string(),
                 ),
-                schema::Attribute {
-                    name: schema::AttributeName("owner-name".to_string()),
-                    event_name: schema::EventName("AccountCreated".to_string()),
-                    stream_name: schema::StreamName("account".to_string()),
+                Attribute {
+                    name: "owner-name".to_string(),
+                    event_name: "AccountCreated".to_string(),
+                    stream_name: "account".to_string(),
                     required: true,
                     attribute_type: "string".to_string(),
                 },
@@ -310,11 +301,11 @@ mod tests {
 
         let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
 
-        let event = Event {
+        let event = event::Event {
             stream: stream_name.clone(),
             key: key.clone(),
             event: event_name.clone(),
-            attributes: vec![Attribute {
+            attributes: vec![event::Attribute {
                 name: "owner-name".to_string(),
                 value: "axel".to_string(),
             }],

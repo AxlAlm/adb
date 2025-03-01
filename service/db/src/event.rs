@@ -1,5 +1,22 @@
-use crate::ast;
-use std::time::{SystemTime, UNIX_EPOCH};
+impl Event {
+    pub fn new(
+        stream: String,
+        key: String,
+        event: String,
+        version: u64,
+        timestamp: u128,
+        attributes: Vec<Attribute>,
+    ) -> Self {
+        return Event {
+            stream,
+            key,
+            event,
+            version,
+            timestamp,
+            attributes,
+        };
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Event {
@@ -11,34 +28,8 @@ pub struct Event {
     pub attributes: Vec<Attribute>,
 }
 
-impl Event {
-    pub fn new(mutation: ast::mutation::AddEventMutation, version: u64) -> Result<Self, String> {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|e| e.to_string())?;
-
-        return Ok(Event {
-            stream: mutation.stream.to_string(),
-            key: mutation.key.to_string(),
-            event: mutation.event.to_string(),
-            version,
-            timestamp: now.as_millis(),
-            attributes: mutation.attributes.into_iter().map(Into::into).collect(),
-        });
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct Attribute {
     pub name: String,
     pub value: String,
-}
-
-impl From<ast::mutation::Attribute> for Attribute {
-    fn from(a: ast::mutation::Attribute) -> Self {
-        Attribute {
-            name: a.name,
-            value: a.value,
-        }
-    }
 }

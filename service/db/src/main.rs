@@ -3,7 +3,6 @@ mod client;
 mod db;
 mod event;
 mod operation;
-mod parser;
 use std::sync::Arc;
 
 // fn main() {
@@ -76,7 +75,7 @@ async fn handle_connection(mut socket: TcpStream, db: Arc<db::DB>) {
                 let msg = String::from_utf8_lossy(&buffer[..n]);
                 println!("Received: {}", msg);
 
-                let msg = match operation::mutation::mutate(&msg, &db) {
+                let msg = match operation::add::add(&msg, &db) {
                     Ok(_) => "mutation done".to_string(),
                     Err(e) => format!("failed to mutate. {}", e),
                 };
@@ -99,7 +98,6 @@ async fn handle_connection(mut socket: TcpStream, db: Arc<db::DB>) {
 mod tests {
     use crate::ast::schema;
     use crate::db::DB;
-    use crate::operation::mutation::mutate;
 
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Arc;
@@ -111,32 +109,29 @@ mod tests {
     async fn test_concurrent_write_to_different_keys() {
         let schema = schema::Schema {
             streams: HashMap::from([(
-                schema::StreamName("account".to_string()),
+                "account".to_string(),
                 schema::Stream {
-                    name: schema::StreamName("account".to_string()),
+                    name: "account".to_string(),
                     key: "account-id".to_string(),
                 },
             )]),
             events: HashMap::from([(
-                (
-                    schema::StreamName("account".to_string()),
-                    schema::EventName("AccountCreated".to_string()),
-                ),
+                ("account".to_string(), "AccountCreated".to_string()),
                 schema::Event {
-                    name: schema::EventName("AccountCreated".to_string()),
-                    stream_name: schema::StreamName("account".to_string()),
+                    name: "AccountCreated".to_string(),
+                    stream_name: "account".to_string(),
                 },
             )]),
             attributes: HashMap::from([(
                 (
-                    schema::StreamName("account".to_string()),
-                    schema::EventName("AccountCreated".to_string()),
-                    schema::AttributeName("owner-name".to_string()),
+                    "account".to_string(),
+                    "AccountCreated".to_string(),
+                    "owner-name".to_string(),
                 ),
                 schema::Attribute {
-                    name: schema::AttributeName("owner-name".to_string()),
-                    event_name: schema::EventName("AccountCreated".to_string()),
-                    stream_name: schema::StreamName("account".to_string()),
+                    name: "owner-name".to_string(),
+                    event_name: "AccountCreated".to_string(),
+                    stream_name: "account".to_string(),
                     required: true,
                     attribute_type: "string".to_string(),
                 },
@@ -240,32 +235,29 @@ mod tests {
     async fn test_concurrent_write_to_same_key() {
         let schema = schema::Schema {
             streams: HashMap::from([(
-                schema::StreamName("account".to_string()),
+                "account".to_string(),
                 schema::Stream {
-                    name: schema::StreamName("account".to_string()),
+                    name: "account".to_string(),
                     key: "account-id".to_string(),
                 },
             )]),
             events: HashMap::from([(
-                (
-                    schema::StreamName("account".to_string()),
-                    schema::EventName("AccountCreated".to_string()),
-                ),
+                ("account".to_string(), "AccountCreated".to_string()),
                 schema::Event {
-                    name: schema::EventName("AccountCreated".to_string()),
-                    stream_name: schema::StreamName("account".to_string()),
+                    name: "AccountCreated".to_string(),
+                    stream_name: "account".to_string(),
                 },
             )]),
             attributes: HashMap::from([(
                 (
-                    schema::StreamName("account".to_string()),
-                    schema::EventName("AccountCreated".to_string()),
-                    schema::AttributeName("owner-name".to_string()),
+                    "account".to_string(),
+                    "AccountCreated".to_string(),
+                    "owner-name".to_string(),
                 ),
                 schema::Attribute {
-                    name: schema::AttributeName("owner-name".to_string()),
-                    event_name: schema::EventName("AccountCreated".to_string()),
-                    stream_name: schema::StreamName("account".to_string()),
+                    name: "owner-name".to_string(),
+                    event_name: "AccountCreated".to_string(),
+                    stream_name: "account".to_string(),
                     required: true,
                     attribute_type: "string".to_string(),
                 },

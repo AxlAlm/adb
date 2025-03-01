@@ -56,18 +56,18 @@ impl DB {
         Ok(())
     }
 
-    // TODO! make migration less naive?
-    // migration currently completely overwrites previous
-    pub fn migrate(&self, schema: schema::Schema) -> Result<(), DBError> {
-        let mut current_schema = self
-            .schema
-            .write()
-            .map_err(|e| DBError::MigrateError(e.to_string()))?;
-        current_schema.streams = schema.streams;
-        current_schema.events = schema.events;
-        current_schema.attributes = schema.attributes;
-        Ok(())
-    }
+    // // TODO! make migration less naive?
+    // // migration currently completely overwrites previous
+    // pub fn migrate(&self, schema: schema::Schema) -> Result<(), DBError> {
+    //     let mut current_schema = self
+    //         .schema
+    //         .write()
+    //         .map_err(|e| DBError::MigrateError(e.to_string()))?;
+    //     current_schema.streams = schema.streams;
+    //     current_schema.events = schema.events;
+    //     current_schema.attributes = schema.attributes;
+    //     Ok(())
+    // }
 
     pub fn get_schema(&self) -> Result<schema::Schema, DBError> {
         let schema = self.schema.read().map_err(|e| {
@@ -206,7 +206,7 @@ mod tests {
     }
 
     #[test]
-    fn test_db_migrate() {
+    fn test_ensure_serial() {
         let schema = Schema {
             streams: HashMap::from([(
                 "account".to_string(),
@@ -238,76 +238,7 @@ mod tests {
             )]),
         };
 
-        let db = DB::new(None);
-
-        match db.migrate(schema) {
-            Ok(_) => (),
-            Err(e) => panic!("failed to migrate: {}", e),
-        }
-
-        let stream_name = "account".to_string();
-        let event_name = "AccountCreated".to_string();
-        let key = "123".to_string();
-
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-
-        let event = event::Event {
-            stream: stream_name.clone(),
-            key: key.clone(),
-            event: event_name.clone(),
-            attributes: vec![event::Attribute {
-                name: "owner-name".to_string(),
-                value: "axel".to_string(),
-            }],
-            version: 1,
-            timestamp: now.as_millis(),
-        };
-
-        match db.add_event(event.clone()) {
-            Ok(_) => (),
-            Err(e) => panic!("failed to add event: {}", e),
-        }
-    }
-
-    #[test]
-    fn test_ensure_serial_version() {
-        let schema = Schema {
-            streams: HashMap::from([(
-                "account".to_string(),
-                Stream {
-                    name: "account".to_string(),
-                    key: "account-id".to_string(),
-                },
-            )]),
-            events: HashMap::from([(
-                ("account".to_string(), "AccountCreated".to_string()),
-                Event {
-                    name: "AccountCreated".to_string(),
-                    stream_name: "account".to_string(),
-                },
-            )]),
-            attributes: HashMap::from([(
-                (
-                    "account".to_string(),
-                    "AccountCreated".to_string(),
-                    "owner-name".to_string(),
-                ),
-                Attribute {
-                    name: "owner-name".to_string(),
-                    event_name: "AccountCreated".to_string(),
-                    stream_name: "account".to_string(),
-                    required: true,
-                    attribute_type: "string".to_string(),
-                },
-            )]),
-        };
-
-        let db = DB::new(None);
-
-        match db.migrate(schema) {
-            Ok(_) => (),
-            Err(e) => panic!("failed to migrate: {}", e),
-        }
+        let db = DB::new(Some(schema));
 
         let stream_name = "account".to_string();
         let event_name = "AccountCreated".to_string();

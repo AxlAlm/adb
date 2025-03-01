@@ -271,7 +271,8 @@ mod parse_tests {
 
     #[test]
     fn test_parse_create_attribute() {
-        let input = String::from("attribute(account, AccountCreated, owner-name, true, string);");
+        let input =
+            String::from("create attribute(account, AccountCreated, owner-name, true, string);");
 
         let result = match parse(&input) {
             Ok(value) => value,

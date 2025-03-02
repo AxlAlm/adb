@@ -193,26 +193,33 @@ fn create_attribute(values: Vec<&str>) -> Result<Attribute, CreateError> {
 }
 
 fn parse(input: &str) -> Result<CreateOperation, CreateError> {
-    let block = input
+    let op_wo_comments = input
         .trim()
         .splitn(2, BLOCK_SEPERATOR)
         .next()
         .ok_or_else(|| CreateError::ParseError("empty operation".to_string()))?;
 
-    let block = String::from_iter(block.chars().filter(|x| !x.is_whitespace()));
-
-    if block.is_empty() {
+    if op_wo_comments.is_empty() {
         return Err(CreateError::ParseError("empty operation".to_string()));
     }
 
-    // create stream(...) -> stream()
-    let clause = block
-        .splitn(2, " ")
-        .next()
-        .ok_or_else(|| CreateError::ParseError("invalid operation".to_string()))?;
+    if !op_wo_comments.to_lowercase().starts_with("create") {
+        return Err(CreateError::ParseError(
+            "not a create operation".to_string(),
+        ));
+    }
+    let op_type_end_idx = op_wo_comments
+        .char_indices()
+        .take(6) // "create" has 6 characters
+        .last()
+        .map(|(idx, _)| idx + 1)
+        .ok_or_else(|| CreateError::ParseError("empty operation".to_string()))?;
 
-    let type_name = extract_block_type(&clause)?;
-    let values = extract_fields(&clause)?;
+    let body = op_wo_comments[op_type_end_idx..].trim_start();
+    let body = String::from_iter(body.chars().filter(|x| !x.is_whitespace()));
+
+    let type_name = extract_block_type(&body)?;
+    let values = extract_fields(&body)?;
     match type_name.as_str() {
         "stream" => Ok(CreateOperation::CreateStream(create_stream(values)?)),
         "event" => Ok(CreateOperation::CreateEvent(create_event(values)?)),
@@ -222,6 +229,11 @@ fn parse(input: &str) -> Result<CreateOperation, CreateError> {
             type_name
         ))),
     }
+}
+
+fn starts_with_create(input: &str) -> bool {
+    let trimmed = input.trim_start();
+    trimmed.to_lowercase().starts_with("create")
 }
 
 #[cfg(test)]
@@ -292,4 +304,64 @@ mod parse_tests {
 
         assert_eq!(expected, result)
     }
+
+    #[test]
+    fn test_parse_create_many_spaces() {
+        let input = String::from("  create    stream  (  account,     account-id  )   ;");
+
+        let result = match parse(&input) {
+            Ok(value) => value,
+            Err(error) => {
+                println!("Error occurred: {:?}", error);
+                panic!("Test failed due to error: {:?}", error);
+            }
+        };
+
+        let expected = CreateOperation::CreateStream(Stream {
+            name: "account".to_string(),
+            key: "account-id".to_string(),
+        });
+
+        assert_eq!(expected, result)
+    }
+
+    #[test]
+    fn test_parse_create_with_comment() {
+        let input = String::from("create stream(account, account-id); // this is a comment");
+
+        let result = match parse(&input) {
+            Ok(value) => value,
+            Err(error) => {
+                println!("Error occurred: {:?}", error);
+                panic!("Test failed due to error: {:?}", error);
+            }
+        };
+
+        let expected = CreateOperation::CreateStream(Stream {
+            name: "account".to_string(),
+            key: "account-id".to_string(),
+        });
+
+        assert_eq!(expected, result)
+    }
+
+    // #[test]
+    // fn test_parse_create_multi_() {
+    //     let input = String::from("create stream(account, account-id); // this is a comment");
+
+    //     let result = match parse(&input) {
+    //         Ok(value) => value,
+    //         Err(error) => {
+    //             println!("Error occurred: {:?}", error);
+    //             panic!("Test failed due to error: {:?}", error);
+    //         }
+    //     };
+
+    //     let expected = CreateOperation::CreateStream(Stream {
+    //         name: "account".to_string(),
+    //         key: "account-id".to_string(),
+    //     });
+
+    //     assert_eq!(expected, result)
+    // }
 }

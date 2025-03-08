@@ -11,7 +11,6 @@ pub enum DBError {
     AddError(String),
     CreateError(String),
     ReadError(String),
-    MigrateError(String),
 }
 
 impl fmt::Display for DBError {
@@ -20,7 +19,6 @@ impl fmt::Display for DBError {
             DBError::AddError(msg) => write!(f, "Add Error: {}", msg),
             DBError::CreateError(msg) => write!(f, "Create Error: {}", msg),
             DBError::ReadError(msg) => write!(f, "Read Error: {}", msg),
-            DBError::MigrateError(msg) => write!(f, "Migrate Error: {}", msg),
         }
     }
 }
@@ -45,29 +43,64 @@ impl DB {
     }
 
     pub fn create_stream(&self, stream: schema::Stream) -> Result<(), DBError> {
-        Ok(())
+        self.schema
+            .write()
+            .map_err(|e| DBError::ReadError(format!("failed to read streams: {}", e.to_string())))?
+            .streams
+            .insert(stream.name.clone(), stream);
+
+        return Ok(());
     }
 
     pub fn create_event(&self, event: schema::Event) -> Result<(), DBError> {
-        Ok(())
+        let schema = self.get_schema()?;
+        if !schema.stream_exists(&event.stream_name) {
+            return Err(DBError::CreateError(format!(
+                "stream '{}' not found",
+                event.stream_name
+            )));
+        }
+
+        self.schema
+            .write()
+            .map_err(|e| DBError::ReadError(format!("failed to read streams: {}", e.to_string())))?
+            .events
+            .insert((event.stream_name.clone(), event.name.clone()), event);
+
+        return Ok(());
     }
 
     pub fn create_attribute(&self, attribute: schema::Attribute) -> Result<(), DBError> {
-        Ok(())
-    }
+        let schema = self.get_schema()?;
+        if !schema.stream_exists(&attribute.stream_name) {
+            return Err(DBError::CreateError(format!(
+                "stream '{}' not found",
+                attribute.stream_name
+            )));
+        }
 
-    // // TODO! make migration less naive?
-    // // migration currently completely overwrites previous
-    // pub fn migrate(&self, schema: schema::Schema) -> Result<(), DBError> {
-    //     let mut current_schema = self
-    //         .schema
-    //         .write()
-    //         .map_err(|e| DBError::MigrateError(e.to_string()))?;
-    //     current_schema.streams = schema.streams;
-    //     current_schema.events = schema.events;
-    //     current_schema.attributes = schema.attributes;
-    //     Ok(())
-    // }
+        if !schema.event_exists(&(attribute.stream_name.clone(), attribute.event_name.clone())) {
+            return Err(DBError::CreateError(format!(
+                "event '{}' not found",
+                attribute.event_name
+            )));
+        }
+
+        self.schema
+            .write()
+            .map_err(|e| DBError::ReadError(format!("failed to read streams: {}", e.to_string())))?
+            .attributes
+            .insert(
+                (
+                    attribute.stream_name.clone(),
+                    attribute.event_name.clone(),
+                    attribute.name.clone(),
+                ),
+                attribute,
+            );
+
+        return Ok(());
+    }
 
     pub fn get_schema(&self) -> Result<schema::Schema, DBError> {
         let schema = self.schema.read().map_err(|e| {
@@ -266,6 +299,101 @@ mod tests {
         match db.add_event(event.clone()) {
             Ok(_) => panic!("expected failure to add event due to version incorrect"),
             Err(e) => println!("failed to add event: {}", e),
+        }
+    }
+
+    #[test]
+    fn test_fail_to_create_event_for_non_existing_stream() {
+        let schema = Schema {
+            streams: HashMap::from([(
+                "account".to_string(),
+                Stream {
+                    name: "account".to_string(),
+                    key: "account-id".to_string(),
+                },
+            )]),
+            events: HashMap::from([(
+                ("account".to_string(), "AccountCreated".to_string()),
+                Event {
+                    name: "AccountCreated".to_string(),
+                    stream_name: "account".to_string(),
+                },
+            )]),
+            attributes: HashMap::from([(
+                (
+                    "account".to_string(),
+                    "AccountCreated".to_string(),
+                    "owner-name".to_string(),
+                ),
+                Attribute {
+                    name: "owner-name".to_string(),
+                    event_name: "AccountCreated".to_string(),
+                    stream_name: "account".to_string(),
+                    required: true,
+                    attribute_type: "string".to_string(),
+                },
+            )]),
+        };
+
+        let db = DB::new(Some(schema));
+
+        let event = schema::Event {
+            name: "AccountCreated".to_string(),
+            stream_name: "DOES NOT EXIST".to_string(),
+        };
+
+        match db.create_event(event.clone()) {
+            Ok(_) => panic!("expect to fail to create event"),
+            Err(e) => println!("successfully failed: {}", e),
+        }
+    }
+
+    #[test]
+    fn test_fail_to_create_attribute_for_non_existing_stream_event() {
+        let schema = Schema {
+            streams: HashMap::from([(
+                "account".to_string(),
+                Stream {
+                    name: "account".to_string(),
+                    key: "account-id".to_string(),
+                },
+            )]),
+            events: HashMap::from([(
+                ("account".to_string(), "AccountCreated".to_string()),
+                Event {
+                    name: "AccountCreated".to_string(),
+                    stream_name: "account".to_string(),
+                },
+            )]),
+            attributes: HashMap::from([(
+                (
+                    "account".to_string(),
+                    "AccountCreated".to_string(),
+                    "owner-name".to_string(),
+                ),
+                Attribute {
+                    name: "owner-name".to_string(),
+                    event_name: "AccountCreated".to_string(),
+                    stream_name: "account".to_string(),
+                    required: true,
+                    attribute_type: "string".to_string(),
+                },
+            )]),
+        };
+
+        let db = DB::new(Some(schema));
+
+        let event = schema::Attribute {
+            name: "AccountCreated".to_string(),
+            stream_name: "DOES NOT EXIST".to_string(),
+            event_name: "DOES NOT EXIST".to_string(),
+            required: true,
+            attribute_type: "string".to_string(),
+        };
+
+        match db.create_attribute(event.clone()) {
+            Ok(_) => panic!("expect to fail to create attribute"),
+            Err(e) => println!("successfully failed: {}", e),
         }
     }
 }

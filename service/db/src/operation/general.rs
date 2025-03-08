@@ -1,7 +1,5 @@
 use core::fmt;
 
-use crate::db::DB;
-
 #[derive(Debug, PartialEq)]
 pub struct Operation {
     pub op_type: OperationType,
@@ -12,51 +10,52 @@ pub struct Operation {
 pub enum OperationType {
     Add,
     Create,
+    Show,
 }
 #[derive(Debug)]
-pub enum CommonError {
+pub enum GeneralError {
     ParseError(String),
 }
 
-impl fmt::Display for CommonError {
+impl fmt::Display for GeneralError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            CommonError::ParseError(msg) => write!(f, "Parse Error: {}", msg),
+            GeneralError::ParseError(msg) => write!(f, "Parse Error: {}", msg),
         }
     }
 }
 
 const ADD_OPERATION_TYPE: &str = "add";
 const CREATE_OPERATION_TYPE: &str = "create";
+const SHOW_OPERATION_TYPE: &str = "show";
 
-pub fn parse_operation(input: &str) -> Result<Operation, CommonError> {
+pub fn parse_operation(input: &str) -> Result<Operation, GeneralError> {
     let op_trimmed = input
         .trim()
         .splitn(2, ";")
         .next()
-        .ok_or_else(|| CommonError::ParseError("empty operation".to_string()))?;
+        .ok_or_else(|| GeneralError::ParseError("empty operation".to_string()))?;
 
     if op_trimmed.is_empty() {
-        return Err(CommonError::ParseError("empty operation".to_string()));
+        return Err(GeneralError::ParseError("empty operation".to_string()));
     }
 
     let op_trimmed = trim_comment(&op_trimmed);
     let mut op_parts = op_trimmed.splitn(2, " ");
     let op_type = op_parts
         .next()
-        .ok_or_else(|| CommonError::ParseError("missing operation type".to_string()))?
+        .ok_or_else(|| GeneralError::ParseError("missing operation type".to_string()))?
         .trim()
         .to_lowercase();
 
     let body: String = op_parts
         .next()
-        .ok_or_else(|| CommonError::ParseError("missing operation type".to_string()))?
+        .ok_or_else(|| GeneralError::ParseError("missing operation type".to_string()))?
         .chars()
         .filter(|c| {
             c.is_alphanumeric()
                 || *c == '-'
                 || *c == ','
-                || *c == ';'
                 || *c == '('
                 || *c == ')'
                 || *c == ':'
@@ -67,7 +66,7 @@ pub fn parse_operation(input: &str) -> Result<Operation, CommonError> {
         .collect();
 
     if body.is_empty() {
-        return Err(CommonError::ParseError("missing body".to_string()));
+        return Err(GeneralError::ParseError("missing body".to_string()));
     }
 
     match op_type.as_str() {
@@ -79,7 +78,11 @@ pub fn parse_operation(input: &str) -> Result<Operation, CommonError> {
             op_type: OperationType::Create,
             body,
         }),
-        _ => Err(CommonError::ParseError(format!(
+        SHOW_OPERATION_TYPE => Ok(Operation {
+            op_type: OperationType::Show,
+            body,
+        }),
+        _ => Err(GeneralError::ParseError(format!(
             "'{}' is not a supported operation",
             op_type
         ))),
@@ -105,12 +108,12 @@ mod tests_op_common {
     #[test]
     fn test_parse_add() {
         let input = r#"
-        ADD AccountCreated(owner-name="axel") TO account:123;
+        ADD AccountCreated(owner-name="axel") -> account:123;
     "#;
 
         let want = Operation {
             op_type: OperationType::Add,
-            body: String::from(r#"AccountCreated(owner-name="axel")TOaccount:123"#),
+            body: String::from(r#"AccountCreated(owner-name="axel")->account:123"#),
         };
 
         let got = match parse_operation(input) {

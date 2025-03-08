@@ -6,7 +6,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const FIELDS_OPENER: &str = "(";
 const FIELDS_CLOSER: &str = ")";
-const ADD_OP_OPENER: &str = "ADD";
 const STREAM_INDICATOR: &str = "->";
 
 #[derive(Debug)]
@@ -55,7 +54,7 @@ impl From<AddEventAttribute> for Attribute {
     }
 }
 
-pub fn add(op: Operation, db: &DB) -> Result<(), AddError> {
+pub fn add(op: Operation, db: &DB) -> Result<String, AddError> {
     let add_ops = parse(&op.body)?;
     let schema = db.get_schema()?;
 
@@ -119,8 +118,9 @@ pub fn add(op: Operation, db: &DB) -> Result<(), AddError> {
         timestamp,
         attributes,
     );
-    db.add_event(event)?;
-    Ok(())
+    db.add_event(event.clone())?;
+
+    Ok(format!("added '{:#?}'", event))
 }
 
 //example input: AccountCreated(...)TO account:123;
@@ -192,7 +192,7 @@ mod tests_add_parse {
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn test_parse_mutation() {
+    fn test_parse_add() {
         let op = Operation {
             op_type: OperationType::Add,
             body: String::from(
@@ -222,6 +222,40 @@ mod tests_add_parse {
         };
 
         assert_eq!(expected, mutations);
+    }
+
+    #[test]
+    fn test_parse_add_fail() {
+        // missing "->", correct should be:
+        //  "AccountCreated(owner-name="axel", created_at="2025-01-02 14:00:00")->account:123"
+        let op = Operation {
+            op_type: OperationType::Add,
+            body: String::from(
+                r#"AccountCreated(owner-name="axel", created_at="2025-01-02 14:00:00")account:123"#,
+            ),
+        };
+
+        match parse(&op.body) {
+            Ok(_) => panic!("expect to fail parsing"),
+            Err(_) => println!("got expected error!"),
+        };
+    }
+
+    #[test]
+    fn test_parse_add_fail_case2() {
+        // missing "(", correct should be:
+        //  "AccountCreated(owner-name="axel", created_at="2025-01-02 14:00:00")->account:123"
+        let op = Operation {
+            op_type: OperationType::Add,
+            body: String::from(
+                r#"AccountCreatedowner-name="axel", created_at="2025-01-02 14:00:00")account:123"#,
+            ),
+        };
+
+        match parse(&op.body) {
+            Ok(_) => panic!("expect to fail parsing"),
+            Err(_) => println!("got expected error!"),
+        };
     }
 }
 
@@ -300,7 +334,7 @@ mod add_tests {
     }
 
     #[test]
-    fn test_add_stream_invalid() {
+    fn test_add_stream_attribute_does_not_exist() {
         let schema = Schema {
             streams: HashMap::from([(
                 "account".to_string(),

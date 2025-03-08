@@ -1,46 +1,14 @@
 mod ast;
-mod client;
 mod db;
 mod event;
 mod operation;
 use std::sync::Arc;
 
-// fn main() {
-//     connect();
-
-//     //     let db = db::DB::new(None);
-
-//     //     let input_migration = r#"
-//     // stream(accounts, account-id);
-//     // event(accounts, AccountCreated);
-//     // attribute(accounts, AccountCreated, owner-name, true, string);
-//     //     "#;
-
-//     //     match operation::migration::migrate(&input_migration, &db) {
-//     //         Ok(_) => println!("migration done"),
-//     //         Err(_) => panic!("failed to parse schema"),
-//     //     };
-
-//     //     let mutatation_input = r#"
-//     //         ADD AccountCreated(owner-name="axel") TO accounts:123
-//     //     "#;
-
-//     //     for _ in 0..5 {
-//     //         match operation::mutation::mutate(mutatation_input, &db) {
-//     //             Ok(_) => println!("mutation done"),
-//     //             Err(e) => panic!("failed to mutate. {}", e),
-//     //         }
-//     //     }
-
 use operation::add::add;
 use operation::create::create;
 use operation::general::{parse_operation, OperationType};
-//     //     let events = db
-//     //         .get_events("accounts".to_string(), "123".to_string())
-//     //         .unwrap();
-//     //     dbg!(events);
-// }
-//
+
+use operation::show::show;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
@@ -74,11 +42,15 @@ async fn handle_connection(mut socket: TcpStream, db: Arc<db::DB>) {
                 let return_msg = exec(&msg, db.clone()).await;
                 match return_msg {
                     Err(e) => {
-                        if let Err(_) = socket.write(&e.to_string().into_bytes()).await {
+                        if let Err(e) = socket.write(&e.to_string().into_bytes()).await {
+                            eprintln!("failed to write message: {}", e);
                             return;
                         }
                     }
-                    Ok(_) => {}
+                    Ok(m) => {
+                        let _ = socket.write(&m.into_bytes()).await;
+                        continue;
+                    }
                 }
             }
             Err(e) => {
@@ -89,30 +61,17 @@ async fn handle_connection(mut socket: TcpStream, db: Arc<db::DB>) {
     }
 }
 
-async fn exec(msg: &str, db: Arc<db::DB>) -> Result<(), String> {
-    let op = parse_operation(msg);
-    if let Err(e) = op {
-        eprintln!("failed parsing");
-        return Err(format!("Error parsing operation: {}", e));
-    }
-
-    let op = op.unwrap();
-
-    dbg!(&op);
-
+async fn exec(msg: &str, db: Arc<db::DB>) -> Result<String, String> {
+    let op = parse_operation(msg).map_err(|e| e.to_string())?;
     match op.op_type {
         OperationType::Add => {
-            if let Err(e) = add(op, &db) {
-                eprintln!("failed adding: {}", e);
-                return Err(format!("Add failed: {}", e));
-            }
-            return Ok(());
+            return Ok(add(op, &db).map_err(|e| e.to_string())?);
         }
         OperationType::Create => {
-            if let Err(e) = create(op, &db) {
-                return Err(format!("Create failed: {}", e));
-            }
-            return Ok(());
+            return Ok(create(op, &db).map_err(|e| e.to_string())?);
+        }
+        OperationType::Show => {
+            return Ok(show(op, &db).map_err(|e| e.to_string())?);
         }
     };
 }
@@ -185,7 +144,7 @@ mod tests {
 
                 while tokio::time::Instant::now() < end_time {
                     match exec(&input, db.clone()).await {
-                        Ok(()) => {}
+                        Ok(_) => {}
                         Err(_e) => {
                             failed_write_counter.fetch_add(1, Ordering::Relaxed);
                         }
@@ -211,7 +170,7 @@ mod tests {
 
                 while tokio::time::Instant::now() < end_time {
                     match exec(&input, db.clone()).await {
-                        Ok(()) => {}
+                        Ok(_) => {}
                         Err(_e) => {
                             failed_write_counter.fetch_add(1, Ordering::Relaxed);
                         }
@@ -236,7 +195,7 @@ mod tests {
 
                 while tokio::time::Instant::now() < end_time {
                     match exec(&input, db.clone()).await {
-                        Ok(()) => {}
+                        Ok(_) => {}
                         Err(_e) => {
                             failed_write_counter.fetch_add(1, Ordering::Relaxed);
                         }
@@ -310,7 +269,7 @@ mod tests {
 
                 while tokio::time::Instant::now() < end_time {
                     match exec(&input, db.clone()).await {
-                        Ok(()) => {}
+                        Ok(_) => {}
                         Err(_e) => {
                             failed_write_counter.fetch_add(1, Ordering::Relaxed);
                         }

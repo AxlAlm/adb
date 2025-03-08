@@ -1,5 +1,9 @@
+use core::fmt;
+
 use crate::ast::schema::{Attribute, Event, Stream};
 use crate::db::{self, DBError};
+
+use super::general::Operation;
 
 const BLOCK_SEPERATOR: &str = ";";
 const FIELDS_OPENER: &str = "(";
@@ -16,6 +20,18 @@ pub enum CreateError {
     CreateAttributeError(String),
 }
 
+impl fmt::Display for CreateError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CreateError::ParseError(msg) => write!(f, "Create Parse Error: {}", msg),
+            CreateError::CreateError(msg) => write!(f, "Create Error: {}", msg),
+            CreateError::CreateStreamError(msg) => write!(f, "Create Stream Error: {}", msg),
+            CreateError::CreateEventError(msg) => write!(f, "Create Event Error: {}", msg),
+            CreateError::CreateAttributeError(msg) => write!(f, "Create Attribute Error: {}", msg),
+        }
+    }
+}
+
 impl From<DBError> for CreateError {
     fn from(error: DBError) -> Self {
         CreateError::CreateError(error.to_string())
@@ -29,8 +45,8 @@ pub enum CreateOperation {
     CreateAttribute(Attribute),
 }
 
-pub fn create(input: &str, db: &db::DB) -> Result<(), CreateError> {
-    let op = parse(input)?;
+pub fn create(op: Operation, db: &db::DB) -> Result<(), CreateError> {
+    let op = parse(&op.body)?;
     match op {
         CreateOperation::CreateStream(op) => db.create_stream(op)?,
         CreateOperation::CreateEvent(op) => db.create_event(op)?,

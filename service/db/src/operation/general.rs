@@ -1,5 +1,7 @@
 use core::fmt;
 
+use crate::db::DB;
+
 #[derive(Debug, PartialEq)]
 pub struct Operation {
     pub op_type: OperationType,
@@ -11,7 +13,7 @@ pub enum OperationType {
     Add,
     Create,
 }
-
+#[derive(Debug)]
 pub enum CommonError {
     ParseError(String),
 }
@@ -27,7 +29,7 @@ impl fmt::Display for CommonError {
 const ADD_OPERATION_TYPE: &str = "add";
 const CREATE_OPERATION_TYPE: &str = "create";
 
-fn parse(input: &str) -> Result<Operation, CommonError> {
+pub fn parse_operation(input: &str) -> Result<Operation, CommonError> {
     let op_trimmed = input
         .trim()
         .splitn(2, ";")
@@ -39,9 +41,6 @@ fn parse(input: &str) -> Result<Operation, CommonError> {
     }
 
     let op_trimmed = trim_comment(&op_trimmed);
-
-    dbg!(&op_trimmed);
-
     let mut op_parts = op_trimmed.splitn(2, " ");
     let op_type = op_parts
         .next()
@@ -63,6 +62,7 @@ fn parse(input: &str) -> Result<Operation, CommonError> {
                 || *c == ':'
                 || *c == '"'
                 || *c == '='
+                || *c == '>'
         })
         .collect();
 
@@ -113,7 +113,7 @@ mod tests_op_common {
             body: String::from(r#"AccountCreated(owner-name="axel")TOaccount:123"#),
         };
 
-        let got = match parse(input) {
+        let got = match parse_operation(input) {
             Ok(o) => o,
             Err(e) => panic!("failed to parse input: {}", e),
         };
@@ -130,7 +130,7 @@ mod tests_op_common {
             body: String::from("event(account,AccountCreated)"),
         };
 
-        let got = match parse(&input) {
+        let got = match parse_operation(&input) {
             Ok(o) => o,
             Err(e) => panic!("failed to parse input: {}", e),
         };
@@ -147,7 +147,7 @@ mod tests_op_common {
             body: String::from("event(account,AccountCreated)"),
         };
 
-        let got = match parse(&input) {
+        let got = match parse_operation(&input) {
             Ok(o) => o,
             Err(e) => panic!("failed to parse input: {}", e),
         };
@@ -164,7 +164,7 @@ mod tests_op_common {
             body: String::from("event(account,AccountCreated)"),
         };
 
-        let got = match parse(&input) {
+        let got = match parse_operation(&input) {
             Ok(o) => o,
             Err(e) => panic!("failed to parse input: {}", e),
         };
@@ -189,7 +189,7 @@ mod tests_op_common {
             body: String::from("event(account,AccountCreated)"),
         };
 
-        let got = match parse(&input) {
+        let got = match parse_operation(&input) {
             Ok(o) => o,
             Err(e) => panic!("failed to parse input: {}", e),
         };
@@ -200,7 +200,7 @@ mod tests_op_common {
     #[test]
     fn test_parse_unsupported_operation_type() {
         let input = String::from("NOTSUPPORTED event(account, AccountCreated);");
-        match parse(&input) {
+        match parse_operation(&input) {
             Ok(_) => panic!("expected failure"),
             Err(_) => eprintln!("successfully failed"),
         };
@@ -209,7 +209,7 @@ mod tests_op_common {
     #[test]
     fn test_parse_empty_command() {
         let input = String::from("");
-        match parse(&input) {
+        match parse_operation(&input) {
             Ok(_) => panic!("expected failure"),
             Err(_) => eprintln!("successfully failed"),
         };
@@ -218,7 +218,7 @@ mod tests_op_common {
     #[test]
     fn test_parse_empty_body() {
         let input = String::from("create ;");
-        match parse(&input) {
+        match parse_operation(&input) {
             Ok(_) => panic!("expected failure"),
             Err(_) => eprintln!("successfully failed"),
         };

@@ -32,6 +32,9 @@ use std::sync::Arc;
 //     //         }
 //     //     }
 
+use operation::add::add;
+use operation::create::create;
+use operation::general::{parse_operation, OperationType};
 //     //     let events = db
 //     //         .get_events("accounts".to_string(), "123".to_string())
 //     //         .unwrap();
@@ -68,16 +71,14 @@ async fn handle_connection(mut socket: TcpStream, db: Arc<db::DB>) {
             Ok(n) => {
                 let msg = String::from_utf8_lossy(&buffer[..n]);
                 println!("Received: {}", msg);
-
-                let msg = match operation::add::add(&msg, &db) {
-                    Ok(_) => "mutation done".to_string(),
-                    Err(e) => format!("failed to mutate. {}", e),
-                };
-
-                let return_msg = msg.to_string().into_bytes();
-                if let Err(e) = socket.write(&return_msg).await {
-                    eprintln!("Failed to send response: {}", e);
-                    return;
+                let return_msg = exec(&msg, db.clone()).await;
+                match return_msg {
+                    Err(e) => {
+                        if let Err(_) = socket.write(&e.to_string().into_bytes()).await {
+                            return;
+                        }
+                    }
+                    Ok(_) => {}
                 }
             }
             Err(e) => {
@@ -88,11 +89,40 @@ async fn handle_connection(mut socket: TcpStream, db: Arc<db::DB>) {
     }
 }
 
+async fn exec(msg: &str, db: Arc<db::DB>) -> Result<(), String> {
+    let op = parse_operation(msg);
+    if let Err(e) = op {
+        eprintln!("failed parsing");
+        return Err(format!("Error parsing operation: {}", e));
+    }
+
+    let op = op.unwrap();
+
+    dbg!(&op);
+
+    match op.op_type {
+        OperationType::Add => {
+            if let Err(e) = add(op, &db) {
+                eprintln!("failed adding: {}", e);
+                return Err(format!("Add failed: {}", e));
+            }
+            return Ok(());
+        }
+        OperationType::Create => {
+            if let Err(e) = create(op, &db) {
+                return Err(format!("Create failed: {}", e));
+            }
+            return Ok(());
+        }
+    };
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use crate::ast::schema;
     use crate::db::DB;
-    use crate::operation::add::add;
 
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Arc;
@@ -141,7 +171,7 @@ mod tests {
         let mut set = tokio::task::JoinSet::new();
 
         let input = r#"
-        ADD AccountCreated(owner-name="axel") TO account:123
+        ADD AccountCreated(owner-name="axel") -> account:123;
     "#;
 
         // Spawn writer tasks
@@ -154,7 +184,7 @@ mod tests {
                 let end_time = tokio::time::Instant::now() + Duration::from_secs(2);
 
                 while tokio::time::Instant::now() < end_time {
-                    match add(&input, &db) {
+                    match exec(&input, db.clone()).await {
                         Ok(()) => {}
                         Err(_e) => {
                             failed_write_counter.fetch_add(1, Ordering::Relaxed);
@@ -166,7 +196,7 @@ mod tests {
         }
 
         let input = r#"
-        ADD AccountCreated(owner-name="axel") TO account:1234
+        ADD AccountCreated(owner-name="axel") -> account:1234;
     "#;
 
         // Spawn writer tasks
@@ -174,12 +204,13 @@ mod tests {
             let db = db.clone();
             let failed_write_counter = failed_write_counter.clone();
             let input = input.to_string();
+            // let db = db.clone();
 
             set.spawn(async move {
                 let end_time = tokio::time::Instant::now() + Duration::from_secs(2);
 
                 while tokio::time::Instant::now() < end_time {
-                    match add(&input, &db) {
+                    match exec(&input, db.clone()).await {
                         Ok(()) => {}
                         Err(_e) => {
                             failed_write_counter.fetch_add(1, Ordering::Relaxed);
@@ -191,7 +222,7 @@ mod tests {
         }
 
         let input = r#"
-        ADD AccountCreated(owner-name="axel") TO account:12345
+        ADD AccountCreated(owner-name="axel") -> account:12345;
     "#;
 
         // Spawn writer tasks
@@ -204,7 +235,7 @@ mod tests {
                 let end_time = tokio::time::Instant::now() + Duration::from_secs(2);
 
                 while tokio::time::Instant::now() < end_time {
-                    match add(&input, &db) {
+                    match exec(&input, db.clone()).await {
                         Ok(()) => {}
                         Err(_e) => {
                             failed_write_counter.fetch_add(1, Ordering::Relaxed);
@@ -265,7 +296,7 @@ mod tests {
         let mut set = tokio::task::JoinSet::new();
 
         let input = r#"
-        ADD AccountCreated(owner-name="axel") TO account:123
+        ADD AccountCreated(owner-name="axel") -> account:123;
     "#;
 
         // Spawn writer tasks
@@ -278,7 +309,7 @@ mod tests {
                 let end_time = tokio::time::Instant::now() + Duration::from_secs(2);
 
                 while tokio::time::Instant::now() < end_time {
-                    match add(&input, &db) {
+                    match exec(&input, db.clone()).await {
                         Ok(()) => {}
                         Err(_e) => {
                             failed_write_counter.fetch_add(1, Ordering::Relaxed);

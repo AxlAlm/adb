@@ -72,26 +72,6 @@ The `find` command lets you query the database. It supports relational queries a
 
 TBA
 
-## motivation
-
-Motivation for this project is to deal with the two following problems with event sourcing
-
-### 1. Event Sourcing is hard to implement
-
-While the real challange with Event Sourcing lies in domain modelling creating the "foundation" needed is not always easy.
-
-Adb provides this needed foundation so focus could be placed on domain modelling.
-
-### 2. Its hard to interact with Event Sourcing systems "ad hod" demands
-
-Getting "ad hoc" request about extracting some data is commonplace when maintaining a system. More seldom, but not non-existent, are request or the internal need for mutations.
-
-Working with a relation database these requests or needs are possible to meet without too much hassle; in most cases its a "simple" SQL command.
-
-Working with event sourcing systems this is not as easy. Often in would entail deploying new code to support the need. And in cases where you do have access to query and mutate directly in the database, e.g. in cases where you use a relation database to store your events, those queries would not be simple!
-
-Adb solves this by providing a simple way to interact with the database; allowing relation queries, quick and simple ways to add events or define new ones.
-
 ## Concurrency
 
 ## Reading

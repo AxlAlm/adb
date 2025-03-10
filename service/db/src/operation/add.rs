@@ -1,33 +1,43 @@
 use super::general::Operation;
 use crate::db::{DBError, DB};
 use crate::event::{Attribute, Event};
-use core::fmt;
+use std::error::Error;
+use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const FIELDS_OPENER: &str = "(";
 const FIELDS_CLOSER: &str = ")";
 const STREAM_INDICATOR: &str = "->";
 
-#[derive(Debug)]
-pub enum AddError {
-    AddError(String),
-    ValidationError(String),
-    ParseError(String),
+pub struct AddError {
+    message: String,
 }
 
-impl From<DBError> for AddError {
-    fn from(error: DBError) -> Self {
-        AddError::AddError(error.to_string())
+impl AddError {
+    fn new(message: &str) -> Self {
+        AddError {
+            message: message.to_string(),
+        }
     }
 }
 
 impl fmt::Display for AddError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            AddError::AddError(msg) => write!(f, "Add Error: {}", msg),
-            AddError::ParseError(msg) => write!(f, "Parse Error: {}", msg),
-            AddError::ValidationError(msg) => write!(f, "Validation Error: {}", msg),
-        }
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl fmt::Debug for AddError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "AddError: {}", self.message)
+    }
+}
+
+impl Error for AddError {}
+
+impl From<DBError> for AddError {
+    fn from(error: DBError) -> Self {
+        AddError::new(&error.to_string())
     }
 }
 
@@ -59,14 +69,14 @@ pub fn add(op: Operation, db: &DB) -> Result<String, AddError> {
     let schema = db.get_schema()?;
 
     if !schema.stream_exists(&add_ops.stream) {
-        return Err(AddError::ValidationError(format!(
+        return Err(AddError::new(&format!(
             "stream '{}' not found",
             add_ops.stream
         )));
     }
 
     if !schema.event_exists(&(add_ops.stream.clone(), add_ops.event.clone())) {
-        return Err(AddError::ValidationError(format!(
+        return Err(AddError::new(&format!(
             "event '{:?}' not found",
             (add_ops.stream, add_ops.event)
         )));
@@ -91,7 +101,7 @@ pub fn add(op: Operation, db: &DB) -> Result<String, AddError> {
         .collect();
 
     if !missing_attributes.is_empty() {
-        return Err(AddError::ValidationError(format!(
+        return Err(AddError::new(&format!(
             "attributes '{:?}' not found",
             missing_attributes
         )));
@@ -106,7 +116,7 @@ pub fn add(op: Operation, db: &DB) -> Result<String, AddError> {
     let new_version = latest_version + 1;
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_err(|e| AddError::AddError(format!("unable to create timestamp: {}", e)))?
+        .map_err(|e| AddError::new(&format!("unable to create timestamp: {}", e)))?
         .as_millis();
 
     let attributes = add_ops.attributes.into_iter().map(Into::into).collect();
@@ -127,7 +137,7 @@ pub fn add(op: Operation, db: &DB) -> Result<String, AddError> {
 fn parse(input: &str) -> Result<AddEvent, AddError> {
     let j = match input.find(FIELDS_OPENER) {
         Some(index) => index,
-        None => return Err(AddError::ParseError(format!("missing feilds"))),
+        None => return Err(AddError::new(&format!("missing feilds"))),
     };
     let event = input[..j].trim().to_string();
 
@@ -135,30 +145,22 @@ fn parse(input: &str) -> Result<AddEvent, AddError> {
     //AccountCreated(...)->account:123; -> account, 123
     let splits: Vec<&str> = input.split(STREAM_INDICATOR).collect();
     if splits.len() != 2 {
-        return Err(AddError::ParseError(format!("missing stream indicator")));
+        return Err(AddError::new(&format!("missing stream indicator")));
     }
     let (stream, key) = match splits[1].trim().split_once(":") {
         Some((x, y)) => (x.trim().to_string(), y.trim().to_string()),
-        _ => return Err(AddError::ParseError(format!("missing stream:key pair"))),
+        _ => return Err(AddError::new(&format!("missing stream:key pair"))),
     };
 
     // extract attributes
     //AccountCreated(owner-name=axel ...)->account:123; -> owner-name=axel ...
     let i = match input.find(FIELDS_OPENER) {
         Some(index) => index + 1,
-        None => {
-            return Err(AddError::ParseError(format!(
-                "missing/invalid fields clause"
-            )))
-        }
+        None => return Err(AddError::new(&format!("missing/invalid fields clause"))),
     };
     let j = match input.find(FIELDS_CLOSER) {
         Some(index) => index,
-        None => {
-            return Err(AddError::ParseError(format!(
-                "missing/invalid fields clause"
-            )))
-        }
+        None => return Err(AddError::new(&format!("missing/invalid fields clause"))),
     };
     let values: Vec<&str> = input[i..j].split(",").collect();
 
@@ -166,7 +168,7 @@ fn parse(input: &str) -> Result<AddEvent, AddError> {
     for v in values {
         let (name, val) = match v.split_once("=") {
             Some(x) => x,
-            _ => return Err(AddError::ParseError(format!("unable to parse field value"))),
+            _ => return Err(AddError::new(&format!("unable to parse field value"))),
         };
 
         attributes.push(AddEventAttribute {

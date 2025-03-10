@@ -1,4 +1,5 @@
-use core::fmt;
+use std::error::Error;
+use std::fmt;
 
 use crate::ast::schema::{Attribute, Event, Stream};
 use crate::db::{self, DBError};
@@ -7,31 +8,35 @@ use super::general::Operation;
 
 const FIELDS_OPENER: &str = "(";
 
-#[allow(dead_code)]
-#[derive(Debug)]
-pub enum CreateError {
-    ParseError(String),
-    CreateError(String),
-    CreateStreamError(String),
-    CreateEventError(String),
-    CreateAttributeError(String),
+struct CreateError {
+    message: String,
 }
 
-impl fmt::Display for CreateError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            CreateError::ParseError(msg) => write!(f, "Create Parse Error: {}", msg),
-            CreateError::CreateError(msg) => write!(f, "Create Error: {}", msg),
-            CreateError::CreateStreamError(msg) => write!(f, "Create Stream Error: {}", msg),
-            CreateError::CreateEventError(msg) => write!(f, "Create Event Error: {}", msg),
-            CreateError::CreateAttributeError(msg) => write!(f, "Create Attribute Error: {}", msg),
+impl CreateError {
+    fn new(message: &str) -> Self {
+        CreateError {
+            message: message.to_string(),
         }
     }
 }
 
+impl fmt::Display for CreateError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl fmt::Debug for CreateError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "CreateError: {}", self.message)
+    }
+}
+
+impl Error for CreateError {}
+
 impl From<DBError> for CreateError {
     fn from(error: DBError) -> Self {
-        CreateError::CreateError(error.to_string())
+        CreateError::new(&error.to_string())
     }
 }
 
@@ -58,7 +63,7 @@ pub fn create(op: Operation, db: &db::DB) -> Result<String, CreateError> {
 fn extract_block_type(input: &str) -> Result<String, CreateError> {
     let splits: Vec<&str> = input.split("(").collect();
     if splits.len() != 2 {
-        return Err(CreateError::ParseError(format!(
+        return Err(CreateError::new(&format!(
             "unable to extract type from '{}'",
             input
         )));
@@ -73,7 +78,7 @@ fn extract_fields(input: &str) -> Result<Vec<&str>, CreateError> {
     let i = match input.find(FIELDS_OPENER) {
         Some(index) => index + 1,
         None => {
-            return Err(CreateError::ParseError(format!(
+            return Err(CreateError::new(&format!(
                 "unable to extract fields from '{}'",
                 input
             )))
@@ -87,7 +92,7 @@ fn extract_fields(input: &str) -> Result<Vec<&str>, CreateError> {
 // test, test-id -> stream {name: test, key:test-id}
 fn create_stream(values: Vec<&str>) -> Result<Stream, CreateError> {
     if values.len() != 2 {
-        return Err(CreateError::CreateStreamError(format!(
+        return Err(CreateError::new(&format!(
             "unable to create stream from '{:?}'",
             values
         )));
@@ -95,16 +100,12 @@ fn create_stream(values: Vec<&str>) -> Result<Stream, CreateError> {
 
     let name = values[0].trim();
     if name.is_empty() {
-        return Err(CreateError::CreateStreamError(
-            "stream name is empty".to_string(),
-        ));
+        return Err(CreateError::new("stream name is empty"));
     }
 
     let key = values[1].trim().to_string();
     if key.is_empty() {
-        return Err(CreateError::CreateStreamError(
-            "stream name is empty".to_string(),
-        ));
+        return Err(CreateError::new("stream name is empty"));
     }
 
     Ok(Stream {
@@ -116,7 +117,7 @@ fn create_stream(values: Vec<&str>) -> Result<Stream, CreateError> {
 // test-stream, test -> event {stream: test-stream, name: test}
 fn create_event(values: Vec<&str>) -> Result<Event, CreateError> {
     if values.len() != 2 {
-        return Err(CreateError::CreateEventError(format!(
+        return Err(CreateError::new(&format!(
             "unable to create event from '{:?}'",
             values
         )));
@@ -124,16 +125,12 @@ fn create_event(values: Vec<&str>) -> Result<Event, CreateError> {
 
     let stream_name = values[0].trim();
     if stream_name.is_empty() {
-        return Err(CreateError::CreateEventError(
-            "stream name is empty".to_string(),
-        ));
+        return Err(CreateError::new("stream name is empty"));
     }
 
     let name = values[1].trim();
     if name.is_empty() {
-        return Err(CreateError::CreateEventError(
-            "event name is empty".to_string(),
-        ));
+        return Err(CreateError::new("event name is empty"));
     }
 
     Ok(Event {
@@ -146,7 +143,7 @@ fn create_event(values: Vec<&str>) -> Result<Event, CreateError> {
 // attribute {event: event-name, name: test, required: true, attribute_type: str}
 fn create_attribute(values: Vec<&str>) -> Result<Attribute, CreateError> {
     if values.len() != 5 {
-        return Err(CreateError::CreateAttributeError(format!(
+        return Err(CreateError::new(&format!(
             "attribute is missing fields. Unable to create attribute from '{:?}'",
             values
         )));
@@ -154,37 +151,29 @@ fn create_attribute(values: Vec<&str>) -> Result<Attribute, CreateError> {
 
     let stream_name = values[0].trim();
     if stream_name.is_empty() {
-        return Err(CreateError::CreateAttributeError(
-            "stream name is empty".to_string(),
-        ));
+        return Err(CreateError::new("stream name is empty"));
     }
 
     let event_name = values[1].trim();
     if event_name.is_empty() {
-        return Err(CreateError::CreateAttributeError(
-            "event name is empty".to_string(),
-        ));
+        return Err(CreateError::new("event name is empty"));
     }
 
     let name = values[2].trim();
     if name.is_empty() {
-        return Err(CreateError::CreateAttributeError(
-            "name is empty".to_string(),
-        ));
+        return Err(CreateError::new("name is empty"));
     }
 
     let required_value = values[3].trim();
     if required_value.is_empty() {
-        return Err(CreateError::CreateAttributeError(
-            "required is empty".to_string(),
-        ));
+        return Err(CreateError::new("required is empty"));
     }
 
     let required = match required_value {
         s if s == "true" => true,
         s if s == "false" => false,
         _ => {
-            return Err(CreateError::CreateAttributeError(format!(
+            return Err(CreateError::new(&format!(
                 "failed to create attribute. required field value is not true or false. value={}",
                 required_value
             )))
@@ -193,9 +182,7 @@ fn create_attribute(values: Vec<&str>) -> Result<Attribute, CreateError> {
 
     let attribute_type = values[4].trim().to_string();
     if attribute_type.is_empty() {
-        return Err(CreateError::CreateAttributeError(
-            "type is empty".to_string(),
-        ));
+        return Err(CreateError::new("type is empty"));
     }
 
     Ok(Attribute {
@@ -214,10 +201,7 @@ fn parse(input: &str) -> Result<CreateOperation, CreateError> {
         "stream" => Ok(CreateOperation::CreateStream(create_stream(values)?)),
         "event" => Ok(CreateOperation::CreateEvent(create_event(values)?)),
         "attribute" => Ok(CreateOperation::CreateAttribute(create_attribute(values)?)),
-        _ => Err(CreateError::ParseError(format!(
-            "unsupported type {}",
-            type_name
-        ))),
+        _ => Err(CreateError::new(&format!("unsupported type {}", type_name))),
     }
 }
 

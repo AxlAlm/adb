@@ -11,6 +11,7 @@ pub enum OperationType {
     Add,
     Create,
     Show,
+    Find,
 }
 #[derive(Debug)]
 pub enum GeneralError {
@@ -28,6 +29,7 @@ impl fmt::Display for GeneralError {
 const ADD_OPERATION_TYPE: &str = "add";
 const CREATE_OPERATION_TYPE: &str = "create";
 const SHOW_OPERATION_TYPE: &str = "show";
+const FIND_OPERATION_TYPE: &str = "find";
 
 pub fn parse_operation(input: &str) -> Result<Operation, GeneralError> {
     let op_trimmed = input
@@ -80,6 +82,10 @@ pub fn parse_operation(input: &str) -> Result<Operation, GeneralError> {
         }),
         SHOW_OPERATION_TYPE => Ok(Operation {
             op_type: OperationType::Show,
+            body,
+        }),
+        FIND_OPERATION_TYPE => Ok(Operation {
+            op_type: OperationType::Find,
             body,
         }),
         _ => Err(GeneralError::ParseError(format!(

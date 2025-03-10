@@ -1,27 +1,38 @@
 use crate::ast::schema;
 use crate::event::Event;
 
-use core::fmt;
+use std::error::Error;
+
 use std::collections::HashMap;
+use std::fmt;
 
 use std::sync::{Arc, RwLock};
 
-#[derive(Debug)]
-pub enum DBError {
-    AddError(String),
-    CreateError(String),
-    ReadError(String),
+pub struct DBError {
+    message: String,
 }
 
-impl fmt::Display for DBError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            DBError::AddError(msg) => write!(f, "Add Error: {}", msg),
-            DBError::CreateError(msg) => write!(f, "Create Error: {}", msg),
-            DBError::ReadError(msg) => write!(f, "Read Error: {}", msg),
+impl DBError {
+    fn new(message: &str) -> Self {
+        DBError {
+            message: message.to_string(),
         }
     }
 }
+
+impl fmt::Display for DBError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl fmt::Debug for DBError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "DBError: {}", self.message)
+    }
+}
+
+impl Error for DBError {}
 
 #[derive(Debug)]
 pub struct Streams(pub HashMap<(String, String), Arc<RwLock<Vec<Event>>>>);
@@ -45,7 +56,7 @@ impl DB {
     pub fn create_stream(&self, stream: schema::Stream) -> Result<(), DBError> {
         self.schema
             .write()
-            .map_err(|e| DBError::ReadError(format!("failed to read streams: {}", e.to_string())))?
+            .map_err(|e| DBError::new(&format!("failed to read streams: {}", e.to_string())))?
             .streams
             .insert(stream.name.clone(), stream);
 
@@ -55,7 +66,7 @@ impl DB {
     pub fn create_event(&self, event: schema::Event) -> Result<(), DBError> {
         let schema = self.get_schema()?;
         if !schema.stream_exists(&event.stream_name) {
-            return Err(DBError::CreateError(format!(
+            return Err(DBError::new(&format!(
                 "stream '{}' not found",
                 event.stream_name
             )));
@@ -63,7 +74,7 @@ impl DB {
 
         self.schema
             .write()
-            .map_err(|e| DBError::ReadError(format!("failed to read streams: {}", e.to_string())))?
+            .map_err(|e| DBError::new(&format!("failed to read streams: {}", e.to_string())))?
             .events
             .insert((event.stream_name.clone(), event.name.clone()), event);
 
@@ -73,14 +84,14 @@ impl DB {
     pub fn create_attribute(&self, attribute: schema::Attribute) -> Result<(), DBError> {
         let schema = self.get_schema()?;
         if !schema.stream_exists(&attribute.stream_name) {
-            return Err(DBError::CreateError(format!(
+            return Err(DBError::new(&format!(
                 "stream '{}' not found",
                 attribute.stream_name
             )));
         }
 
         if !schema.event_exists(&(attribute.stream_name.clone(), attribute.event_name.clone())) {
-            return Err(DBError::CreateError(format!(
+            return Err(DBError::new(&format!(
                 "event '{}' not found",
                 attribute.event_name
             )));
@@ -88,7 +99,7 @@ impl DB {
 
         self.schema
             .write()
-            .map_err(|e| DBError::ReadError(format!("failed to read streams: {}", e.to_string())))?
+            .map_err(|e| DBError::new(&format!("failed to read streams: {}", e.to_string())))?
             .attributes
             .insert(
                 (
@@ -103,9 +114,10 @@ impl DB {
     }
 
     pub fn get_schema(&self) -> Result<schema::Schema, DBError> {
-        let schema = self.schema.read().map_err(|e| {
-            DBError::ReadError(format!("failed to read streams: {}", e.to_string()))
-        })?;
+        let schema = self
+            .schema
+            .read()
+            .map_err(|e| DBError::new(&format!("failed to read streams: {}", e.to_string())))?;
         return Ok(schema.clone());
     }
 
@@ -115,26 +127,26 @@ impl DB {
             let mut streams = self
                 .streams
                 .write()
-                .map_err(|_| DBError::AddError("failed to read streams".to_string()))?;
+                .map_err(|_| DBError::new(&"failed to read streams".to_string()))?;
             let stream = streams.0.entry(k).or_insert(Arc::new(RwLock::new(vec![])));
             stream.clone()
         };
 
         let last_version = stream
             .read()
-            .map_err(|_| DBError::AddError("failed to read streams".to_string()))?
+            .map_err(|_| DBError::new(&"failed to read streams".to_string()))?
             .last()
             .map_or(0, |e| e.version);
 
         if event.version != last_version + 1 {
-            return Err(DBError::AddError(
-                "failed to add event as verion is not serial".to_string(),
+            return Err(DBError::new(
+                &"failed to add event as verion is not serial".to_string(),
             ));
         }
 
         stream
             .write()
-            .map_err(|e| DBError::AddError(format!("failed to add event: {}", e.to_string())))?
+            .map_err(|e| DBError::new(&format!("failed to add event: {}", e.to_string())))?
             .push(event);
         Ok(())
     }
@@ -144,14 +156,15 @@ impl DB {
         stream_name: String,
         key: String,
     ) -> Result<Option<Vec<Event>>, DBError> {
-        let streams = self.streams.read().map_err(|e| {
-            DBError::ReadError(format!("failed to read streams: {}", e.to_string()))
-        })?;
+        let streams = self
+            .streams
+            .read()
+            .map_err(|e| DBError::new(&format!("failed to read streams: {}", e.to_string())))?;
 
         match streams.0.get(&(stream_name, key)) {
             Some(events_lock) => {
                 let events = events_lock.read().map_err(|e| {
-                    DBError::ReadError(format!("failed to read event stream: {}", e.to_string()))
+                    DBError::new(&format!("failed to read event stream: {}", e.to_string()))
                 })?;
                 Ok(Some(events.clone()))
             }

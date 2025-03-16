@@ -73,6 +73,9 @@ async fn exec(msg: &str, db: Arc<db::DB>) -> Result<String, String> {
         OperationType::Show => {
             return Ok(show(op, &db).map_err(|e| e.to_string())?);
         }
+        OperationType::Find => {
+            return Ok(show(op, &db).map_err(|e| e.to_string())?);
+        }
     };
 }
 

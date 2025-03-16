@@ -1,27 +1,4 @@
 
-// SCHEMA DEFINITION
-// stream(<stream name>, <key name>);
-stream(accounts, account-id);
-// event(<stream, name>, <event name>);
-event(AccountCreated, accounts);
-// attribute(<event name>, <attribute name>, <required>, <type>);
-attribute(AccountCreated, owner-name, true, string);
-
-
-//  adding
-// ADD <EVENT>(<key value>, <attribute>=<attribute value>, ...) TO <STREAM>
-ADD AccountCreated(123, owner-name=axel) TO accounts
-
-// transaction
-[add AccountCreated("axel", this)]
-
-//  adding
-add AccountCreated("axel", this)
-
-// transaction
-find ?account_id where 
-
-
 
 ;; Query 1: Find all accounts that had withdrawals within 1 hour of creation
 [:find ?account-id ?withdraw-amount
@@ -45,7 +22,219 @@ find ?account_id where
  [?d :account-id ?account-id]
  [?d :amount ?deposit-amount]
  [(> ?deposit-amount ?initial)]]
-        
+
+
+// find all events in a quer
+
+key is stream id
+event is event name
+attribute is attribute name, attribute also has value
+
+// find events
+find * where key = '123' limit 1;
+
+
+// for all keys in the stream
+find 
+    last(account.AccountCreated.owner-name)
+    sum(account.MoneyWithdrawn.amount) + sum(account.MoneyDeposited.amount);
+
+// group key
+
+
+// for one key in the stream 
+find 
+    last(account.AccountCreated.owner-name)
+    sum(account.MoneyWithdrawn.amount) + sum(account.MoneyDeposited.amount);
+where 
+    stream = "account"
+    and key = "123";
+
+
+// for one key in the stream  ( maybe no need to define account?)
+find 
+    last(account.AccountCreated.owner-name)
+    sum(account.MoneyWithdrawn.amount) + sum(account.MoneyDeposited.amount);
+where 
+    key = "123";
+
+
+
+find 
+    last(account.AccountCreated.amount),
+    sum(account.MoneyWithdrawn.amount) 
+    + sum(account.MoneyDeposited.amount)
+    + sum(loan.LoadCreated.amount) 
+where 
+    account.key = "123"
+    loan.key = "123";
+
+
+
+find 
+    last(account.AccountCreated.amount),
+    sum(account.MoneyWithdrawn.amount) 
+    + sum(account.MoneyDeposited.amount)
+    + sum(loan.LoanSigned.amount) 
+where 
+    stream.name = account
+    account.key = "123"
+    loan.key = "123";
+
+
+RELATIONS?
+find 
+    owner-name
+where 
+    ?s stream.name "account"
+    ?s stream.key "123"
+    ?e event.stream ?s
+    ?e event.key ?s
+    ?a attribute.event ?e
+    ?a attribute.name "owner-name"
+    ?a attribute.value ?owner-name
+
+
+j
+
+
+    "AccountCreated"
+    ?a stream.event.owner-name ?e
+    
+
+
+    ?s stream account:123, // returns streams which name is "account"
+
+    ?e event ?s // return all events
+    ?e event.AccountCreated ?s // return all events
+
+    ?e attribute.address ?address
+
+    
+
+
+    ?e event.stream ?s // returns event that is of stream ?s
+    ?e event.key ?k, // returns event where stream key is ?s
+    ?owner-name event.owner_name ?e // returns the owner name
+
+    ?s2 stream.name "account",
+    ?s2 stream.key "123", // returns stream which key is "123" (??)
+    ?e event.stream ?s3 // returns event that is of stream ?s
+    ?e event.key ?k, // returns event where stream key is ?s
+
+
+    ?s2 stream.name "user"
+
+
+
+    ?key stream.key "123"
+
+
+    ?e event.stream ?s 
+    ?x attribute.owner-name ?o
+    ?x attribute.owner-name ?o;
+
+
+
+
+
+
+
+
+// for all keys
+find 
+    last(AccountCreated.amount)
+    sum(MoneyWithdrawn.amount) + sum(MoneyDeposited.amount);
+
+
+
+// for all keys
+find 
+    last(AccountCreated.amount)
+    sum(MoneyWithdrawn.amount) + sum(MoneyDeposited.amount);
+
+
+
+find 
+    last(?s.AccountCreated.amount)
+    sum(?s.MoneyWithdrawn.amount) + sum(?s.MoneyDeposited.amount);
+where 
+    ?s key = 123
+    ?e key = 123
+
+find ?e
+    where ?e :key = "123";
+find ?e
+    where e? :event 
+find ?<VAR NAME> ...
+    where 
+
+
+
+find 
+    <ENTITIES> 
+where
+    ?<ENTITY> <ATTRIBUTE> <VALUE>
+
+
+// find the sum of an account
+find
+    sum(?amount)
+where 
+   ?account account.key 123
+   ?account account.amount ?amount;
+
+
+
+
+// find the address and name of accounts
+find
+    ?name
+    ?address
+    ?account_id
+where
+    ?user user.address ?address,
+    ?user user.name ?name,
+    ?user user.id ?user_id,
+    ?account. account.user_id ?user_id,
+    _ account.id ?account_id;
+
+
+
+
+
+
+
+
+
+
+Find
+    ?user-name
+    sum(?amount)
+where 
+    _ account.owner-name "axel"
+    _ account.amount ?amount
+    ?loan loan.owner-name ?account
+    ?user user.name ?account
+
+
+
+Find
+    ?user-name
+    sum(?amount)
+where 
+     account.owner-name "axel"
+    _ account.amount ?amount
+    ?loan loan.owner-name ?account
+    ?user user.name ?account
+    
+
+
+
+    ?amount account.amount "account"
+
+
+
 
 
 

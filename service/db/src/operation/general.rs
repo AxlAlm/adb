@@ -207,6 +207,23 @@ mod tests_op_common {
     }
 
     #[test]
+    fn test_parse_find() {
+        let input = String::from(r#"find "#);
+
+        let want = Operation {
+            op_type: OperationType::Find,
+            body: String::from(""),
+        };
+
+        let got = match parse_operation(&input) {
+            Ok(o) => o,
+            Err(e) => panic!("failed to parse input: {}", e),
+        };
+
+        assert_eq!(want, got)
+    }
+
+    #[test]
     fn test_parse_unsupported_operation_type() {
         let input = String::from("NOTSUPPORTED event(account, AccountCreated);");
         match parse_operation(&input) {

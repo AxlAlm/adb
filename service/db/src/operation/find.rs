@@ -5,7 +5,7 @@ use std::fmt;
 
 use super::general::Operation;
 
-struct FindError {
+pub struct FindError {
     message: String,
 }
 
@@ -29,7 +29,16 @@ impl fmt::Debug for FindError {
     }
 }
 
-pub fn find(op: Operation, db: DB) -> Result<String, FindError> {
+impl Error for FindError {}
+
+pub fn find(op: Operation, db: &DB) -> Result<String, FindError> {
     let query_result = String::from("query_result");
     return Ok(query_result);
+}
+
+#[cfg(test)]
+mod find_tests {
+
+    #[test]
+    fn parse_find_general() {}
 }

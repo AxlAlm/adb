@@ -8,7 +8,7 @@ use super::general::Operation;
 
 const FIELDS_OPENER: &str = "(";
 
-struct CreateError {
+pub struct CreateError {
     message: String,
 }
 

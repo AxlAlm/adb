@@ -2,6 +2,11 @@
 pub struct Show {}
 
 // CREATE COMMAND
+//
+// examle:
+//      create stream(account)
+//      create event(AccountCreated) on account
+//      create attribute(name=owner, type=string, required=true) on account:AccountCreated
 pub struct Create {
     entity: EntityNode,
 }
@@ -25,10 +30,12 @@ pub enum EntityNode {
 }
 
 // ADD COMMAND
+// examle:
+//      add AccountCreated(owner="axel") to account:123;
 pub struct Add {
     event: Event,
     stream: String,
-    aggregate: String,
+    stream_id: String,
 }
 
 pub struct Event {
@@ -43,7 +50,7 @@ pub struct AttributeValue {
 
 // FIND COMMAND
 //
-// // find the address and name of accounts
+// example:
 // find
 //     ?name,
 //     ?address,

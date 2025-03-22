@@ -1,5 +1,7 @@
 use core::fmt;
-use std::collections::HashMap;
+use std::{collections::HashMap, u64};
+
+use crate::event::Attribute;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StreamID(pub String);
@@ -96,3 +98,116 @@ impl Schema {
         self.attributes.contains_key(k)
     }
 }
+
+// pub enum Command {
+//     Add,
+//     Create,
+//     Find,
+//     Show,
+//     List,
+// }
+
+// pub enum Entity {
+//     Stream,
+//     Event,
+//     Attribute,
+//     Value,
+// }
+
+// pub enum Operations {
+//     Sum,
+//     Last,
+//     Add,
+// }
+
+pub struct Create {
+    entity: EntityNode,
+}
+
+pub enum EntityNode {
+    Stream {
+        name: StreamID,
+        aggregate_id: String,
+    },
+    Event {
+        name: EventID,
+        stream: StreamID,
+    },
+    Attribute {
+        name: AttributeID,
+        event: EventID,
+        stream: StreamID,
+        required: bool,
+        attribute_type: String,
+    },
+}
+
+pub struct Add {
+    event: Event,
+}
+
+pub struct Event {
+    name: EventID,
+}
+
+// pub enum AstNode {
+//     Find {
+//         line_number: u32,
+//         char_start_number: u32,
+//         attributes: Option<Box<Attribute>>,
+//     },
+
+//     Float {
+//         node_type: String,
+//         line_number: u32,
+//         char_start_number: u32,
+//         left: Option<Box<AstNode>>,
+//         right: Option<Box<AstNode>>,
+//     },
+//     String {
+//         node_type: String,
+//         line_number: u32,
+//         char_start_number: u32,
+//         left: Option<Box<AstNode>>,
+//         right: Option<Box<AstNode>>,
+//     },
+//     Boolean {
+//         node_type: String,
+//         line_number: u32,
+//         char_start_number: u32,
+//         left: Option<Box<AstNode>>,
+//         right: Option<Box<AstNode>>,
+//     },
+// }
+
+// // pub enum AstNode {
+// //     Int {
+// //         node_type: String,
+// //         value: i64,
+// //         line_number: u32,
+// //         char_start_number: u32,
+// //         left: Option<Box<AstNode>>,
+// //         right: Option<Box<AstNode>>,
+// //     },
+// //     Float {
+// //         node_type: String,
+// //         line_number: u32,
+// //         char_start_number: u32,
+// //         left: Option<Box<AstNode>>,
+// //         right: Option<Box<AstNode>>,
+// //     },
+// //     String {
+// //         node_type: String,
+// //         line_number: u32,
+// //         char_start_number: u32,
+// //         left: Option<Box<AstNode>>,
+// //         right: Option<Box<AstNode>>,
+// //     },
+// //     Boolean {
+// //         node_type: String,
+// //         line_number: u32,
+// //         char_start_number: u32,
+// //         left: Option<Box<AstNode>>,
+// //         right: Option<Box<AstNode>>,
+// //     },
+// // }

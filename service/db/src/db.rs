@@ -65,10 +65,10 @@ impl DB {
 
     pub fn create_event(&self, event: schema::Event) -> Result<(), DBError> {
         let schema = self.get_schema()?;
-        if !schema.stream_exists(&event.stream) {
+        if !schema.stream_exists(&event.stream_name) {
             return Err(DBError::new(&format!(
                 "stream '{}' not found",
-                event.stream
+                event.stream_name
             )));
         }
 
@@ -76,7 +76,7 @@ impl DB {
             .write()
             .map_err(|e| DBError::new(&format!("failed to read streams: {}", e.to_string())))?
             .events
-            .insert((event.stream.clone(), event.name.clone()), event);
+            .insert((event.stream_name.clone(), event.name.clone()), event);
 
         return Ok(());
     }

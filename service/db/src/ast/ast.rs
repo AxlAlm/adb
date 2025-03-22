@@ -1,5 +1,8 @@
 // SHOW COMNAND
-pub struct Show {}
+// show schema
+pub struct Show {
+    name: String,
+}
 
 // CREATE COMMAND
 //
@@ -14,7 +17,8 @@ pub struct Create {
 pub enum EntityNode {
     Stream {
         name: String,
-        aggregate_id: String,
+        // aggregate_id: String, // not sure if we need aggregate id, maybe instead we reserve the
+        // // attribute "id"
     },
     Event {
         name: String,

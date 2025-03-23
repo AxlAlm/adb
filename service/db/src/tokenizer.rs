@@ -819,6 +819,29 @@ mod tokenizer_test {
                     Token::EOF,
                 ],
             ),
+            (
+                "join",
+                // get the user_id for accounts where sum amount is more than 100
+                r#"
+                find 
+                    "test"
+                where
+                    account.user_id == user.id;
+                "#,
+                vec![
+                    Token::Keyword(Keyword::Find),
+                    Token::LiteralStr("test".to_string()),
+                    Token::Keyword(Keyword::Where),
+                    Token::Identifier("account".to_string()),
+                    Token::Accessor,
+                    Token::Identifier("user_id".to_string()),
+                    Token::Operator(Operator::Equal),
+                    Token::Identifier("user".to_string()),
+                    Token::Accessor,
+                    Token::Identifier("id".to_string()),
+                    Token::EOF,
+                ],
+            ),
         ];
 
         for (test_name, input, expected_tokens) in test_cases {

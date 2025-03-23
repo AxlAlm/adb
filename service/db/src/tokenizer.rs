@@ -7,7 +7,6 @@ pub enum Token {
     LiteralFloat(f64),
     Identifier(String),
     Accessor,
-    CommandIdentifer(String),
     EOF,        // ;
     Seperator,  // ,
     GroupStart, // (
@@ -87,7 +86,7 @@ impl Operator {
             "+" => Some(Operator::Add),
             "*" => Some(Operator::Multiply),
             "-" => Some(Operator::Subtract),
-            "=" | "==" => Some(Operator::Equal),
+            "==" => Some(Operator::Equal),
             "<" => Some(Operator::Less),
             ">" => Some(Operator::Greater),
             ">=" => Some(Operator::GreaterOrEqual),
@@ -292,10 +291,6 @@ impl<'a> Tokens<'a> {
 
             if let Some(function) = Function::from_str(&buffer_string) {
                 return Ok(Token::Function(function));
-            }
-
-            if is_first_token {
-                return Ok(Token::CommandIdentifer(buffer_string));
             }
 
             if buffer_string == "on" || buffer_string == "to" {

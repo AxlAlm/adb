@@ -1,12 +1,18 @@
 use std::char;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum TokenKind {
-    Literal,
-    Identifier,
-    CommandIdentifer,
-    Auxiliary,
-    // EOF, // no needed yet, but when we have transactions?
+pub enum Token {
+    LiteralStr(String),
+    LiteralInt(i64),
+    LiteralFloat(f64),
+    Identifier(String),
+    CommandIdentifer(String),
+    Auxiliary(String),
+    EOF,              // ;
+    AttributeBinding, // =
+    Seperator,        // ,
+    GroupStart,       // (
+    GroupEnd,         // )
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -26,31 +32,44 @@ impl TokenizerError {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum TokenValue {
-    Int(i64),
-    Float(f64),
-    String(String),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Token {
-    pub kind: TokenKind,
-    pub value: TokenValue,
-}
-
-pub struct Tokens {
-    string: String,
+pub struct Tokens<'a> {
+    chars: std::iter::Peekable<std::str::Chars<'a>>,
     current_line_idx: usize,
     current_char_idx: usize,
+    current_token_idx: usize,
 }
 
-impl Tokens {
-    fn new(string: String) -> Self {
+fn is_group_start(c: &char) -> bool {
+    return c == &'(';
+}
+
+fn is_group_end(c: &char) -> bool {
+    return c == &')';
+}
+
+fn is_eof(c: &char) -> bool {
+    return c == &';';
+}
+
+fn is_seperator(c: &char) -> bool {
+    return c == &',';
+}
+
+fn is_attribute_binder(c: &char) -> bool {
+    return c == &'=';
+}
+
+fn is_supported_identifier_literal_char(c: &char) -> bool {
+    return c.is_alphanumeric() || c == &'_' || c == &'-' || c == &'"' || c == &'.';
+}
+
+impl<'a> Tokens<'a> {
+    fn new(input: &'a str) -> Self {
         return Self {
-            string,
+            chars: input.chars().peekable(),
             current_line_idx: 0,
             current_char_idx: 0,
+            current_token_idx: 0,
         };
     }
 
@@ -58,414 +77,389 @@ impl Tokens {
         let is_first_token = self.current_char_idx == 0;
         let mut buffer: Vec<char> = vec![];
 
-        for c in self.string[self.current_char_idx..].chars() {
-            self.current_char_idx += 1;
+        loop {
+            let c = self.chars.next().ok_or_else(|| TokenizerError {
+                message: "unexpected end of input".to_string(),
+                line_position: self.current_line_idx,
+                char_position: self.current_char_idx,
+            })?;
 
-            if c.is_whitespace()
-                || c == ';'
-                || c == '('
-                || c == ')'
-                || c == ','
-                || c == '='
-                || c == ':'
-            {
+            self.current_char_idx += 1;
+            if c.is_whitespace() {
                 if c == '\n' {
                     self.current_line_idx += 1
-                }
-
-                if buffer.len() != 0 {
-                    break;
                 }
                 continue;
             }
 
-            buffer.push(c);
-        }
-
-        let first_char = match buffer.first() {
-            Some(c) => c.clone(),
-            None => {
-                return Err(TokenizerError {
-                    message: "failed to parse token".to_string(),
-                    line_position: self.current_line_idx,
-                    char_position: self.current_char_idx,
-                })
+            if is_eof(&c) {
+                break;
             }
-        };
 
-        let buffer_string = buffer.iter().collect();
+            if is_seperator(&c) {
+                return Ok(Token::Seperator);
+            }
 
-        let kind: TokenKind;
-        let value: TokenValue;
+            if is_attribute_binder(&c) {
+                return Ok(Token::AttributeBinding);
+            }
 
-        if buffer_string == "on" || buffer_string == "to" {
-            kind = TokenKind::Auxiliary;
-            value = TokenValue::String(buffer_string);
-        } else if is_first_token {
-            kind = TokenKind::CommandIdentifer;
-            value = TokenValue::String(buffer_string);
-        } else if first_char.is_numeric() && buffer_string.contains(".") {
-            let parsed_value = buffer_string.parse::<f64>().map_err(|_| {
-                TokenizerError::new(
-                    "failed to parse float",
+            if is_group_start(&c) {
+                return Ok(Token::GroupStart);
+            }
+
+            if is_group_end(&c) {
+                return Ok(Token::GroupEnd);
+            }
+
+            if !is_supported_identifier_literal_char(&c) {
+                return Err(TokenizerError::new(
+                    &format!("found unsupported character {}", c),
                     self.current_line_idx,
                     self.current_char_idx,
-                )
+                ));
+            }
+
+            buffer.push(c);
+
+            // if next char is a contiuation on current token we continue
+            // otherwise we will create and return a token and reset buffer
+            let next_c = self.chars.peek().ok_or_else(|| TokenizerError {
+                message: "unexpected end of input".to_string(),
+                line_position: self.current_line_idx,
+                char_position: self.current_char_idx,
             })?;
-            kind = TokenKind::Literal;
-            value = TokenValue::Float(parsed_value);
-        } else if first_char.is_numeric() {
-            let parsed_value = buffer_string.parse::<i64>().map_err(|_| {
-                TokenizerError::new(
-                    "failed to parse int",
-                    self.current_line_idx,
-                    self.current_char_idx,
-                )
-            })?;
-            kind = TokenKind::Literal;
-            value = TokenValue::Int(parsed_value);
-        } else if first_char != '"' {
-            kind = TokenKind::Identifier;
-            value = TokenValue::String(buffer_string);
-        } else if first_char == '"' {
-            kind = TokenKind::Literal;
-            value = TokenValue::String(buffer_string.replace('"', ""));
-        } else {
-            return Err(TokenizerError::new(
-                &format!("unexpected token. Unable to tokenize {}", buffer_string),
-                self.current_line_idx,
-                self.current_char_idx,
-            ));
+            if is_supported_identifier_literal_char(&next_c) {
+                continue;
+            }
+
+            let buffer_string: String = buffer.iter().collect();
+
+            if is_first_token {
+                return Ok(Token::CommandIdentifer(buffer_string));
+            } else if buffer_string == "on" || buffer_string == "to" {
+                return Ok(Token::Auxiliary(buffer_string));
+            } else if buffer[0].is_numeric() {
+                if buffer_string.contains(".") {
+                    let parsed_value = buffer_string.parse::<f64>().map_err(|_| {
+                        TokenizerError::new(
+                            "failed to parse float",
+                            self.current_line_idx,
+                            self.current_char_idx,
+                        )
+                    })?;
+                    return Ok(Token::LiteralFloat(parsed_value));
+                }
+
+                let parsed_value = buffer_string.parse::<i64>().map_err(|_| {
+                    TokenizerError::new(
+                        "failed to parse int",
+                        self.current_line_idx,
+                        self.current_char_idx,
+                    )
+                })?;
+                return Ok(Token::LiteralInt(parsed_value));
+            } else if buffer[0] == '"' {
+                return Ok(Token::LiteralStr(buffer_string.replace('"', "")));
+            } else {
+                return Ok(Token::Identifier(buffer_string));
+            }
         }
 
-        return Ok(Token { kind, value });
+        return Ok(Token::EOF);
     }
 }
 
-fn tokenize(input: String) -> Tokens {
+fn tokenize<'a>(input: &'a str) -> Tokens<'a> {
     return Tokens::new(input);
 }
 
 #[cfg(test)]
-mod tokenizer_test_show {
-    use super::{tokenize, Token, TokenKind, TokenValue};
+mod tokenizer_test {
+    use super::{tokenize, Token};
 
     #[test]
-    fn test_tokenizer_show() {
-        let mut tokens = tokenize(String::from("show schema"));
+    fn test_fail_with_missing_eof() {
+        let test_cases = vec![("missing semicolon", "show schema", 1)];
 
-        assert_eq!(
-            tokens.next().unwrap(),
-            Token {
-                kind: TokenKind::CommandIdentifer,
-                value: TokenValue::String("show".to_string()),
-            },
-        );
+        for (test_name, input, expected_token_count) in test_cases {
+            let mut tokens = tokenize(input);
 
-        assert_eq!(
-            tokens.next().unwrap(),
-            Token {
-                kind: TokenKind::Identifier,
-                value: TokenValue::String("schema".to_string()),
+            // Consume the expected number of tokens
+            for _ in 0..expected_token_count {
+                tokens.next().unwrap();
             }
-        );
+
+            // Next token should cause an error
+            match tokens.next() {
+                Ok(_) => panic!("Expected error was not raised in test case: {}", test_name),
+                Err(e) => eprintln!(
+                    "Expected error was raised in test case {}: {:?}",
+                    test_name, e
+                ),
+            }
+        }
     }
 
     #[test]
-    fn test_tokenizer_show_with_spaces() {
-        let mut tokens = tokenize(String::from("show     schema"));
+    fn test_show() {
+        let test_cases = vec![
+            (
+                "normal",
+                "show schema;",
+                vec![
+                    Token::CommandIdentifer("show".to_string()),
+                    Token::Identifier("schema".to_string()),
+                    Token::EOF,
+                ],
+            ),
+            (
+                "with spaces",
+                "show     schema;",
+                vec![
+                    Token::CommandIdentifer("show".to_string()),
+                    Token::Identifier("schema".to_string()),
+                    Token::EOF,
+                ],
+            ),
+            (
+                "with newline",
+                "show
+             schema;",
+                vec![
+                    Token::CommandIdentifer("show".to_string()),
+                    Token::Identifier("schema".to_string()),
+                    Token::EOF,
+                ],
+            ),
+        ];
 
-        assert_eq!(
-            tokens.next().unwrap(),
-            Token {
-                kind: TokenKind::CommandIdentifer,
-                value: TokenValue::String("show".to_string()),
-            },
-        );
+        for (test_name, input, expected_tokens) in test_cases {
+            let mut tokens = tokenize(input);
 
-        assert_eq!(
-            tokens.next().unwrap(),
-            Token {
-                kind: TokenKind::Identifier,
-                value: TokenValue::String("schema".to_string()),
+            for expected_token in expected_tokens {
+                assert_eq!(
+                    tokens.next().unwrap(),
+                    expected_token,
+                    "Failed in test case: {}",
+                    test_name
+                );
             }
-        );
+        }
     }
 
     #[test]
-    fn test_tokenizer_show_with_newlines() {
-        let mut tokens = tokenize(String::from(
-            "show     
+    fn test_create_stream() {
+        let test_cases = vec![
+            (
+                "normal",
+                "create stream account;",
+                vec![
+                    Token::CommandIdentifer("create".to_string()),
+                    Token::Identifier("stream".to_string()),
+                    Token::Identifier("account".to_string()),
+                    Token::EOF,
+                ],
+            ),
+            (
+                "with spaces",
+                "create    stream   account;",
+                vec![
+                    Token::CommandIdentifer("create".to_string()),
+                    Token::Identifier("stream".to_string()),
+                    Token::Identifier("account".to_string()),
+                    Token::EOF,
+                ],
+            ),
+            (
+                "with newline",
+                "create    
+             stream   
+            
+             account;",
+                vec![
+                    Token::CommandIdentifer("create".to_string()),
+                    Token::Identifier("stream".to_string()),
+                    Token::Identifier("account".to_string()),
+                    Token::EOF,
+                ],
+            ),
+        ];
 
+        for (test_name, input, expected_tokens) in test_cases {
+            let mut tokens = tokenize(input);
 
-                schema",
-        ));
-
-        assert_eq!(
-            tokens.next().unwrap(),
-            Token {
-                kind: TokenKind::CommandIdentifer,
-                value: TokenValue::String("show".to_string()),
-            },
-        );
-
-        assert_eq!(
-            tokens.next().unwrap(),
-            Token {
-                kind: TokenKind::Identifier,
-                value: TokenValue::String("schema".to_string()),
+            for expected_token in expected_tokens {
+                assert_eq!(
+                    tokens.next().unwrap(),
+                    expected_token,
+                    "Failed in test case: {}",
+                    test_name
+                );
             }
-        );
-    }
-}
 
-#[cfg(test)]
-mod tokenizer_test_create {
-
-    use super::{tokenize, Token, TokenKind, TokenValue};
-
-    #[test]
-    fn test_tokenize_create_stream() {
-        let mut tokens = tokenize(String::from("create stream account;"));
-
-        assert_eq!(
-            tokens.next().unwrap(),
-            Token {
-                kind: TokenKind::CommandIdentifer,
-                value: TokenValue::String("create".to_string()),
-            },
-        );
-
-        assert_eq!(
-            tokens.next().unwrap(),
-            Token {
-                kind: TokenKind::Identifier,
-                value: TokenValue::String("stream".to_string()),
-            }
-        );
-
-        assert_eq!(
-            tokens.next().unwrap(),
-            Token {
-                kind: TokenKind::Identifier,
-                value: TokenValue::String("account".to_string()),
-            }
-        );
-
-        assert_eq!(tokens.next().is_err(), true);
+            // No need to check for error since we expect to consume all tokens
+        }
     }
 
     #[test]
-    fn test_tokenize_create_event() {
-        let mut tokens = tokenize(String::from(
-            "
-            create event AccountCreated(
-                owner string
-            ) on account;",
-        ));
+    fn create_event() {
+        let test_cases = vec![
+            (
+                "create event statement",
+                "
+                create event AccountCreated(
+                    owner string
+                ) on account;",
+                vec![
+                    Token::CommandIdentifer("create".to_string()),
+                    Token::Identifier("event".to_string()),
+                    Token::Identifier("AccountCreated".to_string()),
+                    Token::GroupStart,
+                    Token::Identifier("owner".to_string()),
+                    Token::Identifier("string".to_string()),
+                    Token::GroupEnd,
+                    Token::Auxiliary("on".to_string()),
+                    Token::Identifier("account".to_string()),
+                    Token::EOF,
+                ],
+            ),
+            (
+                "create event multiple attributes",
+                "
+                create event AccountCreated(
+                    owner string,
+                    ammount int 
+                ) on account;",
+                vec![
+                    Token::CommandIdentifer("create".to_string()),
+                    Token::Identifier("event".to_string()),
+                    Token::Identifier("AccountCreated".to_string()),
+                    Token::GroupStart,
+                    Token::Identifier("owner".to_string()),
+                    Token::Identifier("string".to_string()),
+                    Token::Seperator,
+                    Token::Identifier("ammount".to_string()),
+                    Token::Identifier("int".to_string()),
+                    Token::GroupEnd,
+                    Token::Auxiliary("on".to_string()),
+                    Token::Identifier("account".to_string()),
+                    Token::EOF,
+                ],
+            ),
+        ];
 
-        assert_eq!(
-            tokens.next().unwrap(),
-            Token {
-                kind: TokenKind::CommandIdentifer,
-                value: TokenValue::String("create".to_string()),
-            },
-        );
+        for (test_name, input, expected_tokens) in test_cases {
+            let mut tokens = tokenize(input);
 
-        assert_eq!(
-            tokens.next().unwrap(),
-            Token {
-                kind: TokenKind::Identifier,
-                value: TokenValue::String("event".to_string()),
+            for expected_token in expected_tokens {
+                assert_eq!(
+                    tokens.next().unwrap(),
+                    expected_token,
+                    "Failed in test case: {}",
+                    test_name
+                );
             }
-        );
-
-        assert_eq!(
-            tokens.next().unwrap(),
-            Token {
-                kind: TokenKind::Identifier,
-                value: TokenValue::String("AccountCreated".to_string()),
-            }
-        );
-
-        assert_eq!(
-            tokens.next().unwrap(),
-            Token {
-                kind: TokenKind::Identifier,
-                value: TokenValue::String("owner".to_string()),
-            }
-        );
-
-        assert_eq!(
-            tokens.next().unwrap(),
-            Token {
-                kind: TokenKind::Identifier,
-                value: TokenValue::String("string".to_string()),
-            }
-        );
-
-        assert_eq!(
-            tokens.next().unwrap(),
-            Token {
-                kind: TokenKind::Auxiliary,
-                value: TokenValue::String("on".to_string()),
-            }
-        );
-
-        assert_eq!(
-            tokens.next().unwrap(),
-            Token {
-                kind: TokenKind::Identifier,
-                value: TokenValue::String("account".to_string()),
-            }
-        );
-
-        assert_eq!(tokens.next().is_err(), true);
-    }
-}
-
-#[cfg(test)]
-mod tokenizer_test_add {
-    use super::{tokenize, Token, TokenKind, TokenValue};
-
-    #[test]
-    fn test_tokenize_add_event() {
-        let mut tokens = tokenize(String::from(
-            r#"add AccountCreated(user_id="123", inital_amount=100.59, currency="SEK") to account(id="123");"#,
-        ));
-
-        assert_eq!(
-            tokens.next().unwrap(),
-            Token {
-                kind: TokenKind::CommandIdentifer,
-                value: TokenValue::String("add".to_string()),
-            },
-        );
-
-        assert_eq!(
-            tokens.next().unwrap(),
-            Token {
-                kind: TokenKind::Identifier,
-                value: TokenValue::String("AccountCreated".to_string()),
-            },
-        );
-
-        assert_eq!(
-            tokens.next().unwrap(),
-            Token {
-                kind: TokenKind::Identifier,
-                value: TokenValue::String("user_id".to_string()),
-            },
-        );
-
-        assert_eq!(
-            tokens.next().unwrap(),
-            Token {
-                kind: TokenKind::Literal,
-                value: TokenValue::String("123".to_string()),
-            },
-        );
-
-        assert_eq!(
-            tokens.next().unwrap(),
-            Token {
-                kind: TokenKind::Identifier,
-                value: TokenValue::String("inital_amount".to_string()),
-            },
-        );
-
-        assert_eq!(
-            tokens.next().unwrap(),
-            Token {
-                kind: TokenKind::Literal,
-                value: TokenValue::Float(100.59),
-            },
-        );
-
-        assert_eq!(
-            tokens.next().unwrap(),
-            Token {
-                kind: TokenKind::Identifier,
-                value: TokenValue::String("currency".to_string()),
-            },
-        );
-
-        assert_eq!(
-            tokens.next().unwrap(),
-            Token {
-                kind: TokenKind::Literal,
-                value: TokenValue::String("SEK".to_string()),
-            },
-        );
-
-        assert_eq!(
-            tokens.next().unwrap(),
-            Token {
-                kind: TokenKind::Auxiliary,
-                value: TokenValue::String("to".to_string()),
-            }
-        );
-
-        assert_eq!(
-            tokens.next().unwrap(),
-            Token {
-                kind: TokenKind::Identifier,
-                value: TokenValue::String("account".to_string()),
-            },
-        );
-
-        assert_eq!(
-            tokens.next().unwrap(),
-            Token {
-                kind: TokenKind::Identifier,
-                value: TokenValue::String("id".to_string()),
-            },
-        );
-
-        assert_eq!(
-            tokens.next().unwrap(),
-            Token {
-                kind: TokenKind::Literal,
-                value: TokenValue::String("123".to_string()),
-            },
-        );
-
-        assert_eq!(tokens.next().is_err(), true);
+        }
     }
 
     #[test]
-    fn test_tokenize_add_event_invalid() {
-        let mut tokens = tokenize(String::from(
-            r#"add AccountCreated(user_id, currency="SEK") to account(id="123");"#,
-        ));
+    fn add_event() {
+        let test_cases = vec![
+            (
+                "add event to account",
+                r#"add AccountCreated(user_id="123", inital_amount=100.59, currency="SEK") to account(id="123");"#,
+                vec![
+                    Token::CommandIdentifer("add".to_string()),
+                    Token::Identifier("AccountCreated".to_string()),
+                    Token::GroupStart,
+                    Token::Identifier("user_id".to_string()),
+                    Token::AttributeBinding,
+                    Token::LiteralStr("123".to_string()),
+                    Token::Seperator,
+                    Token::Identifier("inital_amount".to_string()),
+                    Token::AttributeBinding,
+                    Token::LiteralFloat(100.59),
+                    Token::Seperator,
+                    Token::Identifier("currency".to_string()),
+                    Token::AttributeBinding,
+                    Token::LiteralStr("SEK".to_string()),
+                    Token::GroupEnd,
+                    Token::Auxiliary("to".to_string()),
+                    Token::Identifier("account".to_string()),
+                    Token::GroupStart,
+                    Token::Identifier("id".to_string()),
+                    Token::AttributeBinding,
+                    Token::LiteralStr("123".to_string()),
+                    Token::GroupEnd,
+                    Token::EOF,
+                ],
+            ),
+            (
+                "add event to accounti (int amount)",
+                r#"add AccountCreated(inital_amount=100) to account(id="123");"#,
+                vec![
+                    Token::CommandIdentifer("add".to_string()),
+                    Token::Identifier("AccountCreated".to_string()),
+                    Token::GroupStart,
+                    Token::Identifier("inital_amount".to_string()),
+                    Token::AttributeBinding,
+                    Token::LiteralInt(100),
+                    Token::GroupEnd,
+                    Token::Auxiliary("to".to_string()),
+                    Token::Identifier("account".to_string()),
+                    Token::GroupStart,
+                    Token::Identifier("id".to_string()),
+                    Token::AttributeBinding,
+                    Token::LiteralStr("123".to_string()),
+                    Token::GroupEnd,
+                    Token::EOF,
+                ],
+            ),
+            (
+                "add event to account handles spaces and newlines",
+                r#"add AccountCreated(
+                        inital_amount   =100
+                        ) 
+                to account(id="123");"#,
+                vec![
+                    Token::CommandIdentifer("add".to_string()),
+                    Token::Identifier("AccountCreated".to_string()),
+                    Token::GroupStart,
+                    Token::Identifier("inital_amount".to_string()),
+                    Token::AttributeBinding,
+                    Token::LiteralInt(100),
+                    Token::GroupEnd,
+                    Token::Auxiliary("to".to_string()),
+                    Token::Identifier("account".to_string()),
+                    Token::GroupStart,
+                    Token::Identifier("id".to_string()),
+                    Token::AttributeBinding,
+                    Token::LiteralStr("123".to_string()),
+                    Token::GroupEnd,
+                    Token::EOF,
+                ],
+            ),
+        ];
 
-        assert_eq!(
-            tokens.next().unwrap(),
-            Token {
-                kind: TokenKind::CommandIdentifer,
-                value: TokenValue::String("add".to_string()),
-            },
-        );
+        for (test_name, input, expected_tokens) in test_cases {
+            let mut tokens = tokenize(input);
 
-        assert_eq!(
-            tokens.next().unwrap(),
-            Token {
-                kind: TokenKind::Identifier,
-                value: TokenValue::String("AccountCreated".to_string()),
-            },
-        );
+            for expected_token in expected_tokens {
+                assert_eq!(
+                    tokens.next().unwrap(),
+                    expected_token,
+                    "Failed in test case: {}",
+                    test_name
+                );
+            }
 
-        assert_eq!(
-            tokens.next().unwrap(),
-            Token {
-                kind: TokenKind::Identifier,
-                value: TokenValue::String("user_id".to_string()),
-            },
-        );
-
-        match tokens.next() {
-            Ok(t) => panic!("Expected error but got token: {:?}", t),
-            Err(_) => eprint!("failed successfully!"),
+            assert_eq!(
+                tokens.next().is_err(),
+                true,
+                "Should error after all tokens in test: {}",
+                test_name
+            );
         }
     }
 }

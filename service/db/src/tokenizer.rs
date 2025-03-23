@@ -6,13 +6,95 @@ pub enum Token {
     LiteralInt(i64),
     LiteralFloat(f64),
     Identifier(String),
+    Accessor,
     CommandIdentifer(String),
+    EOF,        // ;
+    Seperator,  // ,
+    GroupStart, // (
+    GroupEnd,   // )
+    Assign,
     Auxiliary(String),
-    EOF,              // ;
-    AttributeBinding, // =
-    Seperator,        // ,
-    GroupStart,       // (
-    GroupEnd,         // )
+
+    Keyword(Keyword),
+    Function(Function),
+    Operator(Operator),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Keyword {
+    // Commands
+    Show,
+    Create,
+    Add,
+    Find,
+
+    // Other
+    Limit,
+    Where,
+}
+
+impl Keyword {
+    fn from_str(input: &str) -> Option<Self> {
+        match input.to_lowercase().as_str() {
+            "show" => Some(Keyword::Show),
+            "create" => Some(Keyword::Create),
+            "add" => Some(Keyword::Add),
+            "find" => Some(Keyword::Find),
+            "limit" => Some(Keyword::Limit),
+            "where" => Some(Keyword::Where),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Function {
+    Sum,
+    Max,
+    Min,
+    Avg,
+    Count,
+}
+
+impl Function {
+    fn from_str(input: &str) -> Option<Self> {
+        match input.to_lowercase().as_str() {
+            "sum" => Some(Function::Sum),
+            "max" => Some(Function::Max),
+            "min" => Some(Function::Min),
+            "avg" => Some(Function::Avg),
+            "count" => Some(Function::Count),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Operator {
+    Add,
+    Multiply,
+    Subtract,
+    Equal,
+    Less,
+    Greater,
+    GreaterOrEqual,
+    LessOrEqual,
+}
+
+impl Operator {
+    fn from_str(input: &str) -> Option<Self> {
+        match input {
+            "+" => Some(Operator::Add),
+            "*" => Some(Operator::Multiply),
+            "-" => Some(Operator::Subtract),
+            "=" | "==" => Some(Operator::Equal),
+            "<" => Some(Operator::Less),
+            ">" => Some(Operator::Greater),
+            ">=" => Some(Operator::GreaterOrEqual),
+            "<=" => Some(Operator::LessOrEqual),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -55,12 +137,40 @@ fn is_seperator(c: &char) -> bool {
     return c == &',';
 }
 
-fn is_attribute_binder(c: &char) -> bool {
+fn is_accessor(c: &char) -> bool {
+    return c == &'.';
+}
+
+fn is_assign(c: &char) -> bool {
     return c == &'=';
+}
+
+fn is_operator(c: &char) -> bool {
+    return c == &'=' || c == &'+' || c == &'-' || c == &'*' || c == &'<' || c == &'>';
 }
 
 fn is_supported_identifier_literal_char(c: &char) -> bool {
     return c.is_alphanumeric() || c == &'_' || c == &'-' || c == &'"' || c == &'.';
+}
+
+// Helper function to avoid code duplication for numeric parsing
+fn parse_numeric(
+    s: &str,
+    is_float: bool,
+    line_idx: usize,
+    char_idx: usize,
+) -> Result<Token, TokenizerError> {
+    if is_float {
+        let parsed_value = s
+            .parse::<f64>()
+            .map_err(|_| TokenizerError::new("failed to parse float", line_idx, char_idx))?;
+        Ok(Token::LiteralFloat(parsed_value))
+    } else {
+        let parsed_value = s
+            .parse::<i64>()
+            .map_err(|_| TokenizerError::new("failed to parse int", line_idx, char_idx))?;
+        Ok(Token::LiteralInt(parsed_value))
+    }
 }
 
 impl<'a> Tokens<'a> {
@@ -100,8 +210,16 @@ impl<'a> Tokens<'a> {
                 return Ok(Token::Seperator);
             }
 
-            if is_attribute_binder(&c) {
-                return Ok(Token::AttributeBinding);
+            if is_accessor(&c) {
+                let next_c = self.chars.peek().ok_or_else(|| TokenizerError {
+                    message: "unexpected end of input".to_string(),
+                    line_position: self.current_line_idx,
+                    char_position: self.current_char_idx,
+                })?;
+
+                if !next_c.is_numeric() {
+                    return Ok(Token::Accessor);
+                }
             }
 
             if is_group_start(&c) {
@@ -112,58 +230,93 @@ impl<'a> Tokens<'a> {
                 return Ok(Token::GroupEnd);
             }
 
-            if !is_supported_identifier_literal_char(&c) {
-                return Err(TokenizerError::new(
-                    &format!("found unsupported character {}", c),
-                    self.current_line_idx,
-                    self.current_char_idx,
-                ));
+            if is_operator(&c) {
+                // we peek on next char to see if operator is a two character operator
+                // e.g. >=
+                let next_c = self.chars.peek().ok_or_else(|| TokenizerError {
+                    message: "unexpected end of input".to_string(),
+                    line_position: self.current_line_idx,
+                    char_position: self.current_char_idx,
+                })?;
+
+                // if next char is not an operator and char is "="
+                // we know its and Assign token
+                if !is_operator(&next_c) && is_assign(&c) && buffer.len() == 0 {
+                    return Ok(Token::Assign);
+                }
             }
 
-            buffer.push(c);
+            // Check if we should continue building the current token or finalize it
+            let should_end_token = match self.chars.peek() {
+                Some(&next_c) => {
+                    if next_c.is_whitespace()
+                        || is_seperator(&next_c)
+                        || is_group_start(&next_c)
+                        || is_group_end(&next_c)
+                        || (is_accessor(&next_c) && !c.is_numeric())
+                    {
+                        true
+                    } else if is_operator(&c) && is_operator(&next_c) {
+                        // Special case for multi-character operators like <=, >=, ==
+                        // Here we want to continue if both current and next are operators
+                        // This handles cases like <= where both < and = are operators
+                        false
+                    } else if is_accessor(&c) && next_c.is_alphabetic() {
+                        true
+                    } else if is_assign(&next_c) {
+                        // If next char is an operator and current isn't part of a multi-char operator
+                        true
+                    } else if is_eof(&next_c) {
+                        true
+                    } else {
+                        false
+                    }
+                }
+                None => true, // End of input means end of token
+            };
 
-            // if next char is a contiuation on current token we continue
-            // otherwise we will create and return a token and reset buffer
-            let next_c = self.chars.peek().ok_or_else(|| TokenizerError {
-                message: "unexpected end of input".to_string(),
-                line_position: self.current_line_idx,
-                char_position: self.current_char_idx,
-            })?;
-            if is_supported_identifier_literal_char(&next_c) {
+            buffer.push(c);
+            if !should_end_token {
                 continue;
             }
 
             let buffer_string: String = buffer.iter().collect();
 
+            if let Some(operator) = Operator::from_str(&buffer_string) {
+                return Ok(Token::Operator(operator));
+            }
+
+            if let Some(keyword) = Keyword::from_str(&buffer_string) {
+                return Ok(Token::Keyword(keyword));
+            }
+
+            if let Some(function) = Function::from_str(&buffer_string) {
+                return Ok(Token::Function(function));
+            }
+
             if is_first_token {
                 return Ok(Token::CommandIdentifer(buffer_string));
-            } else if buffer_string == "on" || buffer_string == "to" {
-                return Ok(Token::Auxiliary(buffer_string));
-            } else if buffer[0].is_numeric() {
-                if buffer_string.contains(".") {
-                    let parsed_value = buffer_string.parse::<f64>().map_err(|_| {
-                        TokenizerError::new(
-                            "failed to parse float",
-                            self.current_line_idx,
-                            self.current_char_idx,
-                        )
-                    })?;
-                    return Ok(Token::LiteralFloat(parsed_value));
-                }
-
-                let parsed_value = buffer_string.parse::<i64>().map_err(|_| {
-                    TokenizerError::new(
-                        "failed to parse int",
-                        self.current_line_idx,
-                        self.current_char_idx,
-                    )
-                })?;
-                return Ok(Token::LiteralInt(parsed_value));
-            } else if buffer[0] == '"' {
-                return Ok(Token::LiteralStr(buffer_string.replace('"', "")));
-            } else {
-                return Ok(Token::Identifier(buffer_string));
             }
+
+            if buffer_string == "on" || buffer_string == "to" {
+                return Ok(Token::Auxiliary(buffer_string));
+            }
+
+            if buffer[0].is_numeric() {
+                let is_float = buffer_string.contains(".");
+                return parse_numeric(
+                    &buffer_string,
+                    is_float,
+                    self.current_line_idx,
+                    self.current_char_idx,
+                );
+            }
+
+            if buffer[0] == '"' {
+                return Ok(Token::LiteralStr(buffer_string.replace('"', "")));
+            }
+
+            return Ok(Token::Identifier(buffer_string));
         }
 
         return Ok(Token::EOF);
@@ -176,11 +329,11 @@ fn tokenize<'a>(input: &'a str) -> Tokens<'a> {
 
 #[cfg(test)]
 mod tokenizer_test {
-    use super::{tokenize, Token};
+    use super::{tokenize, Function, Keyword, Operator, Token};
 
     #[test]
     fn test_fail_with_missing_eof() {
-        let test_cases = vec![("missing semicolon", "show schema", 1)];
+        let test_cases = vec![("missing semicolon", "show schema", 2)];
 
         for (test_name, input, expected_token_count) in test_cases {
             let mut tokens = tokenize(input);
@@ -208,7 +361,7 @@ mod tokenizer_test {
                 "normal",
                 "show schema;",
                 vec![
-                    Token::CommandIdentifer("show".to_string()),
+                    Token::Keyword(Keyword::Show),
                     Token::Identifier("schema".to_string()),
                     Token::EOF,
                 ],
@@ -217,7 +370,7 @@ mod tokenizer_test {
                 "with spaces",
                 "show     schema;",
                 vec![
-                    Token::CommandIdentifer("show".to_string()),
+                    Token::Keyword(Keyword::Show),
                     Token::Identifier("schema".to_string()),
                     Token::EOF,
                 ],
@@ -227,7 +380,7 @@ mod tokenizer_test {
                 "show
              schema;",
                 vec![
-                    Token::CommandIdentifer("show".to_string()),
+                    Token::Keyword(Keyword::Show),
                     Token::Identifier("schema".to_string()),
                     Token::EOF,
                 ],
@@ -255,7 +408,7 @@ mod tokenizer_test {
                 "normal",
                 "create stream account;",
                 vec![
-                    Token::CommandIdentifer("create".to_string()),
+                    Token::Keyword(Keyword::Create),
                     Token::Identifier("stream".to_string()),
                     Token::Identifier("account".to_string()),
                     Token::EOF,
@@ -265,7 +418,7 @@ mod tokenizer_test {
                 "with spaces",
                 "create    stream   account;",
                 vec![
-                    Token::CommandIdentifer("create".to_string()),
+                    Token::Keyword(Keyword::Create),
                     Token::Identifier("stream".to_string()),
                     Token::Identifier("account".to_string()),
                     Token::EOF,
@@ -278,7 +431,7 @@ mod tokenizer_test {
             
              account;",
                 vec![
-                    Token::CommandIdentifer("create".to_string()),
+                    Token::Keyword(Keyword::Create),
                     Token::Identifier("stream".to_string()),
                     Token::Identifier("account".to_string()),
                     Token::EOF,
@@ -312,7 +465,7 @@ mod tokenizer_test {
                     owner string
                 ) on account;",
                 vec![
-                    Token::CommandIdentifer("create".to_string()),
+                    Token::Keyword(Keyword::Create),
                     Token::Identifier("event".to_string()),
                     Token::Identifier("AccountCreated".to_string()),
                     Token::GroupStart,
@@ -332,7 +485,7 @@ mod tokenizer_test {
                     ammount int 
                 ) on account;",
                 vec![
-                    Token::CommandIdentifer("create".to_string()),
+                    Token::Keyword(Keyword::Create),
                     Token::Identifier("event".to_string()),
                     Token::Identifier("AccountCreated".to_string()),
                     Token::GroupStart,
@@ -370,26 +523,26 @@ mod tokenizer_test {
                 "add event to account",
                 r#"add AccountCreated(user_id="123", inital_amount=100.59, currency="SEK") to account(id="123");"#,
                 vec![
-                    Token::CommandIdentifer("add".to_string()),
+                    Token::Keyword(Keyword::Add),
                     Token::Identifier("AccountCreated".to_string()),
                     Token::GroupStart,
                     Token::Identifier("user_id".to_string()),
-                    Token::AttributeBinding,
+                    Token::Assign,
                     Token::LiteralStr("123".to_string()),
                     Token::Seperator,
                     Token::Identifier("inital_amount".to_string()),
-                    Token::AttributeBinding,
+                    Token::Assign,
                     Token::LiteralFloat(100.59),
                     Token::Seperator,
                     Token::Identifier("currency".to_string()),
-                    Token::AttributeBinding,
+                    Token::Assign,
                     Token::LiteralStr("SEK".to_string()),
                     Token::GroupEnd,
                     Token::Auxiliary("to".to_string()),
                     Token::Identifier("account".to_string()),
                     Token::GroupStart,
                     Token::Identifier("id".to_string()),
-                    Token::AttributeBinding,
+                    Token::Assign,
                     Token::LiteralStr("123".to_string()),
                     Token::GroupEnd,
                     Token::EOF,
@@ -399,18 +552,18 @@ mod tokenizer_test {
                 "add event to accounti (int amount)",
                 r#"add AccountCreated(inital_amount=100) to account(id="123");"#,
                 vec![
-                    Token::CommandIdentifer("add".to_string()),
+                    Token::Keyword(Keyword::Add),
                     Token::Identifier("AccountCreated".to_string()),
                     Token::GroupStart,
                     Token::Identifier("inital_amount".to_string()),
-                    Token::AttributeBinding,
+                    Token::Assign,
                     Token::LiteralInt(100),
                     Token::GroupEnd,
                     Token::Auxiliary("to".to_string()),
                     Token::Identifier("account".to_string()),
                     Token::GroupStart,
                     Token::Identifier("id".to_string()),
-                    Token::AttributeBinding,
+                    Token::Assign,
                     Token::LiteralStr("123".to_string()),
                     Token::GroupEnd,
                     Token::EOF,
@@ -423,18 +576,18 @@ mod tokenizer_test {
                         ) 
                 to account(id="123");"#,
                 vec![
-                    Token::CommandIdentifer("add".to_string()),
+                    Token::Keyword(Keyword::Add),
                     Token::Identifier("AccountCreated".to_string()),
                     Token::GroupStart,
                     Token::Identifier("inital_amount".to_string()),
-                    Token::AttributeBinding,
+                    Token::Assign,
                     Token::LiteralInt(100),
                     Token::GroupEnd,
                     Token::Auxiliary("to".to_string()),
                     Token::Identifier("account".to_string()),
                     Token::GroupStart,
                     Token::Identifier("id".to_string()),
-                    Token::AttributeBinding,
+                    Token::Assign,
                     Token::LiteralStr("123".to_string()),
                     Token::GroupEnd,
                     Token::EOF,
@@ -460,6 +613,220 @@ mod tokenizer_test {
                 "Should error after all tokens in test: {}",
                 test_name
             );
+        }
+    }
+
+    #[test]
+    fn test_find() {
+        let test_cases = vec![
+            (
+                "simple find",
+                // finds user ids for 10 accounts
+                "
+                find 
+                     account.user_id
+                limit 
+                    10;
+                    ",
+                vec![
+                    Token::Keyword(Keyword::Find),
+                    Token::Identifier("account".to_string()),
+                    Token::Accessor,
+                    Token::Identifier("user_id".to_string()),
+                    Token::Keyword(Keyword::Limit),
+                    Token::LiteralInt(10),
+                    Token::EOF,
+                ],
+            ),
+            (
+                "with aggregation",
+                // finds user ids for 10 accounts
+                "
+                find sum(account.amount);
+                ",
+                vec![
+                    Token::Keyword(Keyword::Find),
+                    Token::Function(Function::Sum),
+                    Token::GroupStart,
+                    Token::Identifier("account".to_string()),
+                    Token::Accessor,
+                    Token::Identifier("amount".to_string()),
+                    Token::GroupEnd,
+                    Token::EOF,
+                ],
+            ),
+            (
+                "with more complex aggregation",
+                // sums amount from various aggregates
+                "
+                find 
+                     sum(account.amount)
+                     + sum(loan.amount) 
+                     - sum(savings.amount);
+                ",
+                vec![
+                    Token::Keyword(Keyword::Find),
+                    // sum(account.amount)
+                    Token::Function(Function::Sum),
+                    Token::GroupStart,
+                    Token::Identifier("account".to_string()),
+                    Token::Accessor,
+                    Token::Identifier("amount".to_string()),
+                    Token::GroupEnd,
+                    // +
+                    Token::Operator(Operator::Add),
+                    // sum(loan.amount)
+                    Token::Function(Function::Sum),
+                    Token::GroupStart,
+                    Token::Identifier("loan".to_string()),
+                    Token::Accessor,
+                    Token::Identifier("amount".to_string()),
+                    Token::GroupEnd,
+                    // -
+                    Token::Operator(Operator::Subtract),
+                    // sum(loan.amount)
+                    Token::Function(Function::Sum),
+                    Token::GroupStart,
+                    Token::Identifier("savings".to_string()),
+                    Token::Accessor,
+                    Token::Identifier("amount".to_string()),
+                    Token::GroupEnd,
+                    Token::EOF,
+                ],
+            ),
+            (
+                "where clause",
+                // get the user_id for accounts where sum amount is more than 100
+                r#"
+                find 
+                    account.user_id
+                where
+                    sum(account.amount) > 100;
+                    ;
+                "#,
+                vec![
+                    Token::Keyword(Keyword::Find),
+                    Token::Identifier("account".to_string()),
+                    Token::Accessor,
+                    Token::Identifier("user_id".to_string()),
+                    Token::Keyword(Keyword::Where),
+                    // sum(account.amount)
+                    Token::Function(Function::Sum),
+                    Token::GroupStart,
+                    Token::Identifier("account".to_string()),
+                    Token::Accessor,
+                    Token::Identifier("amount".to_string()),
+                    Token::GroupEnd,
+                    Token::Operator(Operator::Greater),
+                    Token::LiteralInt(100),
+                    Token::EOF,
+                ],
+            ),
+            (
+                "more filters",
+                // get the user_id for accounts where sum amount is more than 100
+                r#"
+                find 
+                    account.user_id
+                where
+                    sum(account.amount) > 100,
+                    account.created_at <= "2024-01-02",
+                    account.type == "savings";
+                "#,
+                vec![
+                    Token::Keyword(Keyword::Find),
+                    Token::Identifier("account".to_string()),
+                    Token::Accessor,
+                    Token::Identifier("user_id".to_string()),
+                    Token::Keyword(Keyword::Where),
+                    // sum(account.amount) > 100,
+                    Token::Function(Function::Sum),
+                    Token::GroupStart,
+                    Token::Identifier("account".to_string()),
+                    Token::Accessor,
+                    Token::Identifier("amount".to_string()),
+                    Token::GroupEnd,
+                    Token::Operator(Operator::Greater),
+                    Token::LiteralInt(100),
+                    Token::Seperator,
+                    // account.created_at < "2024-01-02";
+                    Token::Identifier("account".to_string()),
+                    Token::Accessor,
+                    Token::Identifier("created_at".to_string()),
+                    Token::Operator(Operator::LessOrEqual),
+                    Token::LiteralStr("2024-01-02".to_string()),
+                    Token::Seperator,
+                    //account.type = "savings";
+                    Token::Identifier("account".to_string()),
+                    Token::Accessor,
+                    Token::Identifier("type".to_string()),
+                    Token::Operator(Operator::Equal),
+                    Token::LiteralStr("savings".to_string()),
+                    Token::EOF,
+                ],
+            ),
+            (
+                "more gte",
+                // get the user_id for accounts where sum amount is more than 100
+                r#"
+                find 
+                    account.user_id
+                where
+                    sum(account.amount) >= 100;
+                "#,
+                vec![
+                    Token::Keyword(Keyword::Find),
+                    Token::Identifier("account".to_string()),
+                    Token::Accessor,
+                    Token::Identifier("user_id".to_string()),
+                    Token::Keyword(Keyword::Where),
+                    // sum(account.amount) > 100,
+                    Token::Function(Function::Sum),
+                    Token::GroupStart,
+                    Token::Identifier("account".to_string()),
+                    Token::Accessor,
+                    Token::Identifier("amount".to_string()),
+                    Token::GroupEnd,
+                    Token::Operator(Operator::GreaterOrEqual),
+                    Token::LiteralInt(100),
+                    Token::EOF,
+                ],
+            ),
+            (
+                "multiple selector",
+                // get the user_id for accounts where sum amount is more than 100
+                r#"
+                find 
+                    "test",
+                    account.user_id,
+                    sum(account.amount);
+                "#,
+                vec![
+                    Token::Keyword(Keyword::Find),
+                    Token::LiteralStr("test".to_string()),
+                    Token::Seperator,
+                    Token::Identifier("account".to_string()),
+                    Token::Accessor,
+                    Token::Identifier("user_id".to_string()),
+                    Token::Seperator,
+                    // sum(account.amount)
+                    Token::Function(Function::Sum),
+                    Token::GroupStart,
+                    Token::Identifier("account".to_string()),
+                    Token::Accessor,
+                    Token::Identifier("amount".to_string()),
+                    Token::GroupEnd,
+                    Token::EOF,
+                ],
+            ),
+        ];
+
+        for (test_name, input, expected_tokens) in test_cases {
+            let mut tokens = tokenize(input);
+            for expected_token in expected_tokens {
+                let t = tokens.next().unwrap();
+                assert_eq!(t, expected_token, "Failed in test case: {}", test_name);
+            }
         }
     }
 }

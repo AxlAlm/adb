@@ -1,175 +1,14 @@
-use std::char;
+use std::{char, error::Error, fmt};
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum Token {
-    LiteralStr(String),
-    LiteralInt(i64),
-    LiteralFloat(f64),
-    Identifier(String),
-    Accessor,
-    EOF,        // ;
-    Seperator,  // ,
-    GroupStart, // (
-    GroupEnd,   // )
-    Assign,
-    Auxiliary(String),
-
-    Keyword(Keyword),
-    Function(Function),
-    Operator(Operator),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Keyword {
-    // Commands
-    Show,
-    Create,
-    Add,
-    Find,
-
-    // Other
-    Limit,
-    Where,
-}
-
-impl Keyword {
-    fn from_str(input: &str) -> Option<Self> {
-        match input.to_lowercase().as_str() {
-            "show" => Some(Keyword::Show),
-            "create" => Some(Keyword::Create),
-            "add" => Some(Keyword::Add),
-            "find" => Some(Keyword::Find),
-            "limit" => Some(Keyword::Limit),
-            "where" => Some(Keyword::Where),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Function {
-    Sum,
-    Max,
-    Min,
-    Avg,
-    Count,
-}
-
-impl Function {
-    fn from_str(input: &str) -> Option<Self> {
-        match input.to_lowercase().as_str() {
-            "sum" => Some(Function::Sum),
-            "max" => Some(Function::Max),
-            "min" => Some(Function::Min),
-            "avg" => Some(Function::Avg),
-            "count" => Some(Function::Count),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Operator {
-    Add,
-    Multiply,
-    Subtract,
-    Equal,
-    Less,
-    Greater,
-    GreaterOrEqual,
-    LessOrEqual,
-}
-
-impl Operator {
-    fn from_str(input: &str) -> Option<Self> {
-        match input {
-            "+" => Some(Operator::Add),
-            "*" => Some(Operator::Multiply),
-            "-" => Some(Operator::Subtract),
-            "==" => Some(Operator::Equal),
-            "<" => Some(Operator::Less),
-            ">" => Some(Operator::Greater),
-            ">=" => Some(Operator::GreaterOrEqual),
-            "<=" => Some(Operator::LessOrEqual),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct TokenizerError {
-    message: String,
-    line_position: usize,
-    char_position: usize,
-}
-
-impl TokenizerError {
-    fn new(message: &str, line_position: usize, char_position: usize) -> Self {
-        return TokenizerError {
-            message: message.to_string(),
-            line_position,
-            char_position,
-        };
-    }
+pub fn tokenize<'a>(input: &'a str) -> Tokens<'a> {
+    return Tokens::new(input);
 }
 
 pub struct Tokens<'a> {
     chars: std::iter::Peekable<std::str::Chars<'a>>,
     current_line_idx: usize,
     current_char_idx: usize,
-    current_token_idx: usize,
-}
-
-fn is_group_start(c: &char) -> bool {
-    return c == &'(';
-}
-
-fn is_group_end(c: &char) -> bool {
-    return c == &')';
-}
-
-fn is_eof(c: &char) -> bool {
-    return c == &';';
-}
-
-fn is_seperator(c: &char) -> bool {
-    return c == &',';
-}
-
-fn is_accessor(c: &char) -> bool {
-    return c == &'.';
-}
-
-fn is_assign(c: &char) -> bool {
-    return c == &'=';
-}
-
-fn is_operator(c: &char) -> bool {
-    return c == &'=' || c == &'+' || c == &'-' || c == &'*' || c == &'<' || c == &'>';
-}
-
-fn is_supported_identifier_literal_char(c: &char) -> bool {
-    return c.is_alphanumeric() || c == &'_' || c == &'-' || c == &'"' || c == &'.';
-}
-
-// Helper function to avoid code duplication for numeric parsing
-fn parse_numeric(
-    s: &str,
-    is_float: bool,
-    line_idx: usize,
-    char_idx: usize,
-) -> Result<Token, TokenizerError> {
-    if is_float {
-        let parsed_value = s
-            .parse::<f64>()
-            .map_err(|_| TokenizerError::new("failed to parse float", line_idx, char_idx))?;
-        Ok(Token::LiteralFloat(parsed_value))
-    } else {
-        let parsed_value = s
-            .parse::<i64>()
-            .map_err(|_| TokenizerError::new("failed to parse int", line_idx, char_idx))?;
-        Ok(Token::LiteralInt(parsed_value))
-    }
+    peeked_token: Option<Result<Token, TokenizerError>>,
 }
 
 impl<'a> Tokens<'a> {
@@ -178,12 +17,11 @@ impl<'a> Tokens<'a> {
             chars: input.chars().peekable(),
             current_line_idx: 0,
             current_char_idx: 0,
-            current_token_idx: 0,
+            peeked_token: None,
         };
     }
 
-    fn next(&mut self) -> Result<Token, TokenizerError> {
-        let is_first_token = self.current_char_idx == 0;
+    fn next_internal(&mut self) -> Result<Token, TokenizerError> {
         let mut buffer: Vec<char> = vec![];
 
         loop {
@@ -316,10 +154,207 @@ impl<'a> Tokens<'a> {
 
         return Ok(Token::EOF);
     }
+
+    pub fn peek(&mut self) -> Result<Token, TokenizerError> {
+        match &self.peeked_token {
+            Some(t) => t.clone(),
+            None => {
+                let token = self.next_internal();
+                self.peeked_token = Some(token.clone());
+                return token;
+            }
+        }
+    }
+
+    pub fn next(&mut self) -> Result<Token, TokenizerError> {
+        if let Some(t) = self.peeked_token.take() {
+            return t;
+        }
+
+        self.next_internal()
+    }
 }
 
-fn tokenize<'a>(input: &'a str) -> Tokens<'a> {
-    return Tokens::new(input);
+#[derive(Debug, Clone, PartialEq)]
+pub struct TokenizerError {
+    message: String,
+    line_position: usize,
+    char_position: usize,
+}
+
+impl TokenizerError {
+    fn new(message: &str, line_position: usize, char_position: usize) -> Self {
+        return TokenizerError {
+            message: message.to_string(),
+            line_position,
+            char_position,
+        };
+    }
+}
+
+impl fmt::Display for TokenizerError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} at line {} and positions {}",
+            self.message, self.line_position, self.char_position
+        )
+    }
+}
+
+impl Error for TokenizerError {}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Token {
+    LiteralStr(String),
+    LiteralInt(i64),
+    LiteralFloat(f64),
+    Identifier(String),
+    Accessor,
+    EOF,        // ;
+    Seperator,  // ,
+    GroupStart, // (
+    GroupEnd,   // )
+    Assign,
+    Auxiliary(String),
+
+    Keyword(Keyword),
+    Function(Function),
+    Operator(Operator),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Keyword {
+    // Commands
+    Show,
+    Create,
+    Add,
+    Find,
+
+    // Other
+    Limit,
+    Where,
+}
+
+impl Keyword {
+    fn from_str(input: &str) -> Option<Self> {
+        match input.to_lowercase().as_str() {
+            "show" => Some(Keyword::Show),
+            "create" => Some(Keyword::Create),
+            "add" => Some(Keyword::Add),
+            "find" => Some(Keyword::Find),
+            "limit" => Some(Keyword::Limit),
+            "where" => Some(Keyword::Where),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Function {
+    Sum,
+    Max,
+    Min,
+    Avg,
+    Count,
+}
+
+impl Function {
+    fn from_str(input: &str) -> Option<Self> {
+        match input.to_lowercase().as_str() {
+            "sum" => Some(Function::Sum),
+            "max" => Some(Function::Max),
+            "min" => Some(Function::Min),
+            "avg" => Some(Function::Avg),
+            "count" => Some(Function::Count),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Operator {
+    Add,
+    Multiply,
+    Subtract,
+    Divide,
+    Modulus,
+    Equal,
+    NotEqual,
+    Less,
+    Greater,
+    GreaterOrEqual,
+    LessOrEqual,
+}
+
+impl Operator {
+    fn from_str(input: &str) -> Option<Self> {
+        match input {
+            "+" => Some(Operator::Add),
+            "*" => Some(Operator::Multiply),
+            "-" => Some(Operator::Subtract),
+            "/" => Some(Operator::Divide),
+            "==" => Some(Operator::Equal),
+            "<" => Some(Operator::Less),
+            ">" => Some(Operator::Greater),
+            ">=" => Some(Operator::GreaterOrEqual),
+            "<=" => Some(Operator::LessOrEqual),
+            "%" => Some(Operator::Modulus),
+            _ => None,
+        }
+    }
+}
+
+fn is_group_start(c: &char) -> bool {
+    return c == &'(';
+}
+
+fn is_group_end(c: &char) -> bool {
+    return c == &')';
+}
+
+fn is_eof(c: &char) -> bool {
+    return c == &';';
+}
+
+fn is_seperator(c: &char) -> bool {
+    return c == &',';
+}
+
+fn is_accessor(c: &char) -> bool {
+    return c == &'.';
+}
+
+fn is_assign(c: &char) -> bool {
+    return c == &'=';
+}
+
+fn is_operator(c: &char) -> bool {
+    return c == &'=' || c == &'+' || c == &'-' || c == &'*' || c == &'<' || c == &'>';
+}
+
+fn is_supported_identifier_literal_char(c: &char) -> bool {
+    return c.is_alphanumeric() || c == &'_' || c == &'-' || c == &'"' || c == &'.';
+}
+
+// Helper function to avoid code duplication for numeric parsing
+fn parse_numeric(
+    s: &str,
+    is_float: bool,
+    line_idx: usize,
+    char_idx: usize,
+) -> Result<Token, TokenizerError> {
+    if is_float {
+        let parsed_value = s
+            .parse::<f64>()
+            .map_err(|_| TokenizerError::new("failed to parse float", line_idx, char_idx))?;
+        Ok(Token::LiteralFloat(parsed_value))
+    } else {
+        let parsed_value = s
+            .parse::<i64>()
+            .map_err(|_| TokenizerError::new("failed to parse int", line_idx, char_idx))?;
+        Ok(Token::LiteralInt(parsed_value))
+    }
 }
 
 #[cfg(test)]

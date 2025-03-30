@@ -2,6 +2,7 @@ mod ast;
 mod db;
 mod event;
 mod operation;
+mod parser;
 mod tokenizer;
 use std::sync::Arc;
 

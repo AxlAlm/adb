@@ -1,125 +1,92 @@
-// SHOW COMNAND
-// show schema
-pub struct Show {
-    name: String,
+#[derive(Debug, PartialEq)]
+pub struct Transaction {
+    pub commands: Vec<Command>,
 }
 
-// CREATE COMMAND
-//
-// examle:
-//      create stream(account)
-//      create event(AccountCreated) on account
-//      create attribute(name=owner, type=string, required=true) on account:AccountCreated
-pub struct Create {
-    entity: EntityNode,
-}
-
-pub enum EntityNode {
-    Stream {
-        name: String,
-        // aggregate_id: String, // not sure if we need aggregate id, maybe instead we reserve the
-        // // attribute "id"
+#[derive(Debug, PartialEq)]
+pub enum Command {
+    // show command
+    Show {
+        entity: Entity,
     },
-    Event {
-        name: String,
+
+    // examle:
+    //      create stream(account)
+    //      create event(AccountCreated) on account
+    //      create attribute(name=owner, type=string, required=true) on account:AccountCreated
+    Create {
+        entity: Entity,
+    },
+
+    // add command
+    // examle:
+    //      add AccountCreated(owner="axel") to account:123;
+    Add {
+        event: Event,
         stream: String,
+        stream_id: String,
     },
-    Attribute {
-        name: String,
-        event: String,
-        stream: String,
-        required: bool,
-        attribute_type: String,
+
+    // find command
+    Find {
+        // examples:
+        // find
+        //      "axel" // literal
+        //      account.id // attribute (is the last attribute value)
+        //      sum(amount) - sum(loan) // aggregate
+        // ...
+        projections: Vec<ProjectionClause>,
+        predicates: Vec<Predicate>,
+        limit: Option<Limit>,
     },
 }
 
-// ADD COMMAND
-// examle:
-//      add AccountCreated(owner="axel") to account:123;
-pub struct Add {
-    event: Event,
-    stream: String,
-    stream_id: String,
+#[derive(Debug, PartialEq)]
+pub enum Entity {
+    Schema,
+    Stream(String),
+    Event { name: String, stream: String },
 }
 
+#[derive(Debug, PartialEq)]
 pub struct Event {
     name: String,
     values: Vec<AttributeValue>,
 }
 
+#[derive(Debug, PartialEq)]
 pub struct AttributeValue {
     name: String,
     value: Value,
 }
 
-// FIND COMMAND
-//
-// example:
-// find
-//     ?name,
-//     ?address,
-//     ?account_id,
-//     sum(?account.amount) as balance
-// where
-//     ?user user.address ?address,
-//     ?user user.name ?name,
-//     ?user user.id ?user_id,
-//     ?account. account.user_id ?user_id,
-//     ?account. account.amount? amount,
-//     _ account.id ?account_id;
-
-pub struct Find {
-    // examples:
-    // find
-    //      "axel" // literal
-    //      ?name // attribute (is the last attribute value)
-    //      sum(?amount) - sum(?loan) // aggregate
-    // ...
-    projections: Vec<ProjectionClause>,
-    predicates: Vec<Predicate>,
-}
-
-// example:
-//  sum(?amount) as balance
-//  "axel" as owner
+#[derive(Debug, PartialEq)]
 pub struct ProjectionClause {
-    alias: String,
-    projection: Projection,
+    pub alias: String,
+    pub projection: Expression,
 }
 
-pub enum Projection {
-    Variable(Variable),
-    Literal(Literal),
-    Aggregate(Aggregate),
-}
-
+// where
+#[derive(Debug, PartialEq)]
 pub enum Predicate {
     // examples:
-    // ?acccount.owner-name != "gunnar"
-    // sum(?account.ammount) < 100
+    // acccount.owner-name != "gunnar"
+    // sum(account.ammount) < 100
     // _ OR _ ( _ AND _)
-    Filter(BinaryOperator),
-
-    // example:
-    // ?account account.owner-name "gunnar"
-    Relation {
-        aggregate: Variable,
-        attribute: Attribute,
-        value: Expression,
-    },
+    BinaryOperation(BinaryOperation),
 }
 
-pub struct Attribute {
-    aggregate: String,
-    name: String,
-}
+#[derive(Debug, PartialEq)]
+pub struct Limit(pub i64);
 
 // GENERAL
-pub struct Aggregate {
-    function: AggregateFunction,
-    argument: Box<Expression>,
-}
+// #[derive(Debug, PartialEq)]
+// pub struct Aggregate {
+//     pub function: AggregateFunction,
+//     pub argument: Expression,
+// }
 
+#[derive(Debug, PartialEq)]
 pub enum AggregateFunction {
     Sum,
     Min,
@@ -128,6 +95,7 @@ pub enum AggregateFunction {
     Count,
 }
 
+#[derive(Debug, PartialEq)]
 pub enum Value {
     Bool(bool),
     String(String),
@@ -137,28 +105,35 @@ pub enum Value {
 }
 
 // e.g. "axel", 1, true
-pub struct Literal {
-    pub value: Value,
-}
-// e.g.  ?variable // change to Variable?
-pub struct Variable {
-    pub name: String,
-}
+#[derive(Debug, PartialEq)]
+pub struct Literal(pub Value);
 
+#[derive(Debug, PartialEq)]
 pub enum UnaryOperator {
     // Arithmetic
     Negate, // -x
 }
 
+#[derive(Debug, PartialEq)]
 pub struct BinaryOperation {
-    left: Box<Expression>,
-    operator: BinaryOperator,
-    right: Box<Expression>,
+    pub left: Expression,
+    pub operator: BinaryOperator,
+    pub right: Expression,
 }
 
+#[derive(Debug, PartialEq)]
 pub enum Expression {
     Literal(Literal),
-    Variable(Variable),
+    Aggregate {
+        function: AggregateFunction,
+        argument: Box<Expression>,
+    },
+    Expression(Box<Expression>),
+    // Variable(Variable),
+    Attribute {
+        stream: String,
+        attribute: String,
+    },
     UnaryOperation {
         operator: UnaryOperator,
         operand: Box<Expression>,
@@ -166,13 +141,14 @@ pub enum Expression {
     BinaryOperation(BinaryOperator),
 }
 
+#[derive(Debug, PartialEq)]
 pub enum BinaryOperator {
     // Arithmetic operators
     Add,      // +
     Subtract, // -
     Multiply, // *
     Divide,   // /
-    // Modulus,  // %
+    Modulus,  // %
 
     // Logical operators
     And, // AND

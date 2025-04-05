@@ -79,13 +79,6 @@ pub enum Predicate {
 #[derive(Debug, PartialEq)]
 pub struct Limit(pub i64);
 
-// GENERAL
-// #[derive(Debug, PartialEq)]
-// pub struct Aggregate {
-//     pub function: AggregateFunction,
-//     pub argument: Expression,
-// }
-
 #[derive(Debug, PartialEq)]
 pub enum AggregateFunction {
     Sum,
@@ -110,15 +103,14 @@ pub struct Literal(pub Value);
 
 #[derive(Debug, PartialEq)]
 pub enum UnaryOperator {
-    // Arithmetic
     Negate, // -x
 }
 
 #[derive(Debug, PartialEq)]
 pub struct BinaryOperation {
-    pub left: Expression,
+    pub left: Box<Expression>,
     pub operator: BinaryOperator,
-    pub right: Expression,
+    pub right: Box<Expression>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -129,7 +121,6 @@ pub enum Expression {
         argument: Box<Expression>,
     },
     Expression(Box<Expression>),
-    // Variable(Variable),
     Attribute {
         stream: String,
         attribute: String,
@@ -138,7 +129,7 @@ pub enum Expression {
         operator: UnaryOperator,
         operand: Box<Expression>,
     },
-    BinaryOperation(BinaryOperator),
+    BinaryOperation(BinaryOperation),
 }
 
 #[derive(Debug, PartialEq)]

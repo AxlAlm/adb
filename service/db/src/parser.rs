@@ -3,6 +3,39 @@ use std::{error::Error, fmt};
 use crate::ast::ast;
 use crate::tokenizer::{tokenize, Function, Keyword, Operator, Token, TokenizerError, Tokens};
 
+macro_rules! match_extract {
+    // for extracting the value of the enums. e.g. Token::Operator(op) => op
+    ($tokens:expr, $token_enum:ident::$variant:ident($pattern:pat) => $result:expr) => {{
+        let token = $tokens.next()?;
+        match token {
+            $token_enum::$variant($pattern) => $result,
+            token => {
+                return Err(ParserError::new(&format!(
+                    "Expected {}::{} token but got {:?}",
+                    stringify!($token_enum),
+                    stringify!($variant),
+                    token
+                )))
+            }
+        }
+    }};
+
+    // For simple variants without values like Token::Accessor
+    ($tokens:expr, $token_enum:path) => {{
+        let token = $tokens.next()?;
+        match token {
+            $token_enum => (),
+            token => {
+                return Err(ParserError::new(&format!(
+                    "Expected {} token but got {:?}",
+                    stringify!($token_enum),
+                    token
+                )))
+            }
+        }
+    }};
+}
+
 fn parse(input: &str) -> Result<ast::Transaction, ParserError> {
     let mut tokens = tokenize(input);
 
@@ -39,16 +72,7 @@ fn parse_find(tokens: &mut Tokens<'_>) -> Result<ast::Command, ParserError> {
             predicates = parse_predicates(tokens)?;
         }
         Token::Keyword(Keyword::Limit) => {
-            let t = tokens.next()?;
-            match t {
-                Token::LiteralInt(n) => limit = Some(ast::Limit(n)),
-                _ => {
-                    return Err(ParserError::new(&format!(
-                        "got unexpected token '{:?}'",
-                        token
-                    )))
-                }
-            }
+            limit = match_extract!(tokens, Token::LiteralInt(n) => Some(ast::Limit(n)));
         }
         _ => {
             return Err(ParserError::new(&format!(
@@ -75,23 +99,14 @@ fn parse_predicates(tokens: &mut Tokens<'_>) -> Result<Vec<ast::Predicate>, Pars
         }
 
         let left = parse_expression(tokens)?;
-        let token = tokens.next()?;
-        let operator = match token {
-            Token::Operator(op) => map_opeator_to_binary_operator(&op),
-            _ => {
-                return Err(ParserError::new(&format!(
-                    "got unexpected token '{:?}'",
-                    token
-                )))
-            }
-        };
-
+        let token_operator = match_extract!(tokens, Token::Operator(op) => op);
+        let operator = map_operator_to_binary_operator(&token_operator);
         let right = parse_expression(tokens)?;
 
         let predicate = ast::Predicate::BinaryOperation(ast::BinaryOperation {
-            left,
+            left: Box::new(left),
             operator,
-            right,
+            right: Box::new(right),
         });
 
         predicates.push(predicate);
@@ -124,41 +139,42 @@ fn parse_projection_clauses(
 
 // account.user_id
 // sum(account.amount)
-// sum((account.amount + 100) + 100)
+// sum(account.amount) + (100 + 100))
 fn parse_expression(tokens: &mut Tokens<'_>) -> Result<ast::Expression, ParserError> {
     let token = tokens.next()?;
-    match token {
+    let expression = match token {
         Token::Identifier(stream) => {
-            match tokens.next()? {
-                Token::Accessor => (),
-                _ => return Err(ParserError::new("OH NO")),
-            };
-            let attribute = match tokens.next()? {
-                Token::Identifier(attribute) => attribute,
-                _ => return Err(ParserError::new("OH NO")),
-            };
-            Ok(ast::Expression::Attribute { stream, attribute })
+            match_extract!(tokens, Token::Accessor);
+            let attribute = match_extract!(tokens, Token::Identifier(v) => v);
+            ast::Expression::Attribute { stream, attribute }
         }
         Token::Function(Function::Sum) => {
-            match tokens.next()? {
-                Token::GroupStart => (),
-                _ => return Err(ParserError::new("OH NO")),
-            };
+            match_extract!(tokens, Token::GroupStart);
             let expression = parse_expression(tokens)?;
-            match tokens.next()? {
-                Token::GroupEnd => (),
-                _ => return Err(ParserError::new("OH NO")),
-            };
-            Ok(ast::Expression::Aggregate {
+            match_extract!(tokens, Token::GroupEnd);
+            ast::Expression::Aggregate {
                 function: ast::AggregateFunction::Sum,
                 argument: Box::new(expression),
-            })
+            }
         }
-        Token::LiteralStr(str) => Ok(ast::Expression::Literal(ast::Literal(ast::Value::String(
-            str,
-        )))),
-        _ => Err(ParserError::new(&format!("unexpected token: {:?}`", token))),
+        Token::LiteralStr(str) => ast::Expression::Literal(ast::Literal(ast::Value::String(str))),
+        Token::LiteralInt(int) => ast::Expression::Literal(ast::Literal(ast::Value::Int(int))),
+        _ => return Err(ParserError::new(&format!("unexpected token: {:?}`", token))),
+    };
+
+    if matches!(
+        tokens.peek()?,
+        Token::Operator(Operator::Add) | Token::Operator(Operator::Subtract)
+    ) {
+        tokens.next()?;
+        return Ok(ast::Expression::BinaryOperation(ast::BinaryOperation {
+            left: Box::new(expression),
+            operator: ast::BinaryOperator::Add,
+            right: Box::new(parse_expression(tokens)?),
+        }));
     }
+
+    Ok(expression)
 }
 
 fn parse_show(tokens: &mut Tokens<'_>) -> Result<ast::Command, ParserError> {
@@ -168,8 +184,8 @@ fn parse_show(tokens: &mut Tokens<'_>) -> Result<ast::Command, ParserError> {
 }
 
 fn parse_entity(tokens: &mut Tokens<'_>) -> Result<ast::Entity, ParserError> {
+    // let entity_name = match_extract!(tokens, Token::Identifier(entity_name) => entity_name)
     let token = tokens.next()?;
-
     match token {
         Token::Identifier(name) => match name.as_str() {
             "schema" => Ok(ast::Entity::Schema),
@@ -212,7 +228,7 @@ impl From<TokenizerError> for ParserError {
 
 impl Error for ParserError {}
 
-pub fn map_opeator_to_binary_operator(operator: &Operator) -> ast::BinaryOperator {
+pub fn map_operator_to_binary_operator(operator: &Operator) -> ast::BinaryOperator {
     match operator {
         Operator::Add => ast::BinaryOperator::Add,
         Operator::Subtract => ast::BinaryOperator::Subtract,
@@ -231,7 +247,7 @@ pub fn map_opeator_to_binary_operator(operator: &Operator) -> ast::BinaryOperato
 #[cfg(test)]
 mod parser_test {
 
-    use crate::ast::ast::{self, AggregateFunction};
+    use crate::ast::ast;
 
     use super::parse;
 
@@ -288,7 +304,7 @@ mod parser_test {
                         projections: vec![ast::ProjectionClause {
                             alias: "".to_string(),
                             projection: ast::Expression::Aggregate {
-                                function: AggregateFunction::Sum,
+                                function: ast::AggregateFunction::Sum,
                                 argument: Box::new(ast::Expression::Attribute {
                                     stream: "account".to_string(),
                                     attribute: "amount".to_string(),
@@ -296,16 +312,60 @@ mod parser_test {
                             },
                         }],
                         predicates: vec![ast::Predicate::BinaryOperation(ast::BinaryOperation {
-                            left: ast::Expression::Attribute {
+                            left: Box::new(ast::Expression::Attribute {
                                 stream: "account".to_string(),
                                 attribute: "user_id".to_string(),
-                            },
+                            }),
                             operator: ast::BinaryOperator::Equal,
-                            right: ast::Expression::Literal(ast::Literal(ast::Value::String(
-                                "123".to_string(),
+                            right: Box::new(ast::Expression::Literal(ast::Literal(
+                                ast::Value::String("123".to_string()),
                             ))),
                         })],
                         limit: None,
+                    }],
+                },
+            ),
+            (
+                "nested projection",
+                r#"
+            find 
+                 sum(account.amount) + sum(savings.loan) + 100
+            limit
+                10
+
+            "#,
+                ast::Transaction {
+                    commands: vec![ast::Command::Find {
+                        projections: vec![ast::ProjectionClause {
+                            alias: "".to_string(),
+                            projection: ast::Expression::BinaryOperation(ast::BinaryOperation {
+                                left: Box::new(ast::Expression::Aggregate {
+                                    function: ast::AggregateFunction::Sum,
+                                    argument: Box::new(ast::Expression::Attribute {
+                                        stream: "account".to_string(),
+                                        attribute: "amount".to_string(),
+                                    }),
+                                }),
+                                operator: ast::BinaryOperator::Add,
+                                right: Box::new(ast::Expression::BinaryOperation(
+                                    ast::BinaryOperation {
+                                        left: Box::new(ast::Expression::Aggregate {
+                                            function: ast::AggregateFunction::Sum,
+                                            argument: Box::new(ast::Expression::Attribute {
+                                                stream: "savings".to_string(),
+                                                attribute: "loan".to_string(),
+                                            }),
+                                        }),
+                                        operator: ast::BinaryOperator::Add,
+                                        right: Box::new(ast::Expression::Literal(ast::Literal(
+                                            ast::Value::Int(100),
+                                        ))),
+                                    },
+                                )),
+                            }),
+                        }],
+                        predicates: vec![],
+                        limit: Some(ast::Limit(10)),
                     }],
                 },
             ),

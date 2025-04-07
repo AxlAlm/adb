@@ -3,6 +3,7 @@ mod db;
 mod event;
 mod operation;
 mod parser;
+mod plan;
 mod tokenizer;
 use std::sync::Arc;
 

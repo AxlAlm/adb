@@ -410,7 +410,7 @@ mod parser_test {
                 },
             ),
             (
-                "create stream",
+                "create event",
                 "create event AccountCreated(
                     owner string,
                     amount int 

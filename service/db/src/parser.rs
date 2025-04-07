@@ -46,6 +46,14 @@ fn parse(input: &str) -> Result<ast::Transaction, ParserError> {
             let cmd = parse_show(&mut tokens)?;
             commands.push(cmd);
         }
+        Token::Keyword(Keyword::Create) => {
+            let cmd = parse_create(&mut tokens)?;
+            commands.push(cmd);
+        }
+        Token::Keyword(Keyword::Add) => {
+            let cmd = parse_add(&mut tokens)?;
+            commands.push(cmd);
+        }
         Token::Keyword(Keyword::Find) => {
             let cmd = parse_find(&mut tokens)?;
             commands.push(cmd);
@@ -61,33 +69,152 @@ fn parse(input: &str) -> Result<ast::Transaction, ParserError> {
     return Ok(ast::Transaction { commands });
 }
 
-fn parse_find(tokens: &mut Tokens<'_>) -> Result<ast::Command, ParserError> {
-    let projections = parse_projection_clauses(tokens)?;
-
-    let token = tokens.next()?;
-    let mut predicates = vec![];
-    let mut limit = None;
-    match token {
-        Token::Keyword(Keyword::Where) => {
-            predicates = parse_predicates(tokens)?;
+fn parse_create(tokens: &mut Tokens<'_>) -> Result<ast::Command, ParserError> {
+    let entity_type = match_extract!(tokens, Token::Identifier(entity_type) => entity_type);
+    let entity = match entity_type.as_str() {
+        "stream" => {
+            let stream = match_extract!(tokens, Token::Identifier(name) => name);
+            ast::Entity::Stream(stream)
         }
-        Token::Keyword(Keyword::Limit) => {
-            limit = match_extract!(tokens, Token::LiteralInt(n) => Some(ast::Limit(n)));
+        "event" => {
+            let name = match_extract!(tokens, Token::Identifier(name) => name);
+            match_extract!(tokens, Token::GroupStart);
+            let mut attributes = vec![];
+            loop {
+                if matches!(tokens.peek()?, Token::GroupEnd) {
+                    break;
+                }
+
+                let attribute = ast::AttributeDefinition {
+                    name: match_extract!(tokens, Token::Identifier(name) => name),
+                    data_type: match_extract!(tokens, Token::Identifier(name) => name),
+                };
+                attributes.push(attribute);
+
+                if matches!(tokens.peek()?, Token::Seperator) {
+                    tokens.next()?;
+                }
+            }
+            match_extract!(tokens, Token::GroupEnd);
+            match_extract!(tokens, Token::AuxiliaryOn);
+            let stream = match_extract!(tokens, Token::Identifier(name) => name);
+            ast::Entity::Event {
+                name,
+                stream,
+                attributes,
+            }
         }
         _ => {
             return Err(ParserError::new(&format!(
-                "got unexpected token '{:?}'",
-                token
+                "Got unsupported entity '{}'",
+                entity_type
             )))
         }
-    }
+    };
 
-    let cmd = ast::Command::Find {
+    Ok(ast::Command::Create { entity })
+}
+
+fn parse_add(tokens: &mut Tokens<'_>) -> Result<ast::Command, ParserError> {
+    let event_name = match_extract!(tokens, Token::Identifier(entity_type) => entity_type);
+    match_extract!(tokens, Token::GroupStart);
+    let mut attributes_value = vec![];
+    loop {
+        if matches!(tokens.peek()?, Token::GroupEnd) {
+            break;
+        }
+
+        let attribute_name = match_extract!(tokens, Token::Identifier(name) => name);
+        match_extract!(tokens, Token::Assign);
+        let token = tokens.next()?;
+        let value = match token {
+            Token::LiteralInt(v) => ast::Value::Int(v),
+            Token::LiteralStr(v) => ast::Value::String(v),
+            Token::LiteralFloat(v) => ast::Value::Float(v),
+            Token::LiteralBool(v) => ast::Value::Bool(v),
+            _ => {
+                return Err(ParserError::new(&format!(
+                    "got unexpected type {:?}",
+                    token
+                )))
+            }
+        };
+
+        let attribute = ast::AttributeValue {
+            name: attribute_name,
+            value,
+        };
+        attributes_value.push(attribute);
+
+        if matches!(tokens.peek()?, Token::Seperator) {
+            tokens.next()?;
+        }
+    }
+    match_extract!(tokens, Token::GroupEnd);
+    match_extract!(tokens, Token::AuxiliaryTo);
+    let stream = match_extract!(tokens, Token::Identifier(name) => name);
+    match_extract!(tokens, Token::GroupStart);
+    match_extract!(tokens, Token::Identifier(id) => id); // id=..
+    match_extract!(tokens, Token::Assign);
+    let stream_id = match_extract!(tokens, Token::LiteralStr(stream_id) => stream_id); //id=<stream_id>
+    match_extract!(tokens, Token::GroupEnd);
+    match_extract!(tokens, Token::EOF);
+
+    Ok(ast::Command::Add {
+        event: ast::Event {
+            name: event_name,
+            values: attributes_value,
+        },
+        stream,
+        stream_id,
+    })
+}
+
+fn parse_find(tokens: &mut Tokens<'_>) -> Result<ast::Command, ParserError> {
+    let projections = parse_projections_clause(tokens)?;
+    let predicates = parse_optional_where_clause(tokens)?;
+    let limit = parse_optional_limit_clause(tokens)?;
+
+    match_extract!(tokens, Token::EOF);
+
+    Ok(ast::Command::Find {
         projections,
         predicates,
         limit,
-    };
-    Ok(cmd)
+    })
+}
+
+fn parse_optional_where_clause(
+    tokens: &mut Tokens<'_>,
+) -> Result<Vec<ast::Predicate>, ParserError> {
+    let token = tokens.peek()?;
+
+    if token != Token::Keyword(Keyword::Where) {
+        return Ok(vec![]);
+    }
+
+    tokens.next()?;
+    parse_predicates(tokens)
+}
+
+fn parse_optional_limit_clause(tokens: &mut Tokens<'_>) -> Result<Option<ast::Limit>, ParserError> {
+    let token = tokens.peek()?;
+    match token {
+        Token::Keyword(Keyword::Limit) => {
+            tokens.next()?; // consume LIMIT
+            let token = tokens.next()?; // should be an literal int
+            match token {
+                Token::LiteralInt(n) => return Ok(Some(ast::Limit(n))),
+                _ => {
+                    return Err(ParserError::new(&format!(
+                        "Exepected LiteralInt Token after LIMIT Keyword, got; {:?}",
+                        token
+                    )))
+                }
+            }
+        }
+        _ => Ok(None),
+    }
 }
 
 fn parse_predicates(tokens: &mut Tokens<'_>) -> Result<Vec<ast::Predicate>, ParserError> {
@@ -103,11 +230,11 @@ fn parse_predicates(tokens: &mut Tokens<'_>) -> Result<Vec<ast::Predicate>, Pars
         let operator = map_operator_to_binary_operator(&token_operator);
         let right = parse_expression(tokens)?;
 
-        let predicate = ast::Predicate::BinaryOperation(ast::BinaryOperation {
-            left: Box::new(left),
+        let predicate = ast::Predicate::BinaryOperation {
+            left,
             operator,
-            right: Box::new(right),
-        });
+            right,
+        };
 
         predicates.push(predicate);
     }
@@ -115,23 +242,25 @@ fn parse_predicates(tokens: &mut Tokens<'_>) -> Result<Vec<ast::Predicate>, Pars
     Ok(predicates)
 }
 
-fn parse_projection_clauses(
-    tokens: &mut Tokens<'_>,
-) -> Result<Vec<ast::ProjectionClause>, ParserError> {
+fn parse_projections_clause(tokens: &mut Tokens<'_>) -> Result<Vec<ast::Projection>, ParserError> {
     let mut projections = vec![];
     loop {
-        let peeked_token = tokens.peek()?;
+        // stop of there are no more projections
         if matches!(
-            peeked_token,
+            tokens.peek()?,
             Token::Keyword(Keyword::Where) | Token::Keyword(Keyword::Limit)
         ) {
             break;
         }
 
-        projections.push(ast::ProjectionClause {
+        projections.push(ast::Projection {
             alias: "".to_string(),
             projection: parse_expression(tokens)?,
         });
+
+        if matches!(tokens.peek()?, Token::Seperator) {
+            tokens.next()?;
+        }
     }
 
     Ok(projections)
@@ -140,6 +269,7 @@ fn parse_projection_clauses(
 // account.user_id
 // sum(account.amount)
 // sum(account.amount) + (100 + 100))
+// 100
 fn parse_expression(tokens: &mut Tokens<'_>) -> Result<ast::Expression, ParserError> {
     let token = tokens.next()?;
     let expression = match token {
@@ -153,12 +283,13 @@ fn parse_expression(tokens: &mut Tokens<'_>) -> Result<ast::Expression, ParserEr
             let expression = parse_expression(tokens)?;
             match_extract!(tokens, Token::GroupEnd);
             ast::Expression::Aggregate {
-                function: ast::AggregateFunction::Sum,
+                function: ast::Function::Sum,
                 argument: Box::new(expression),
             }
         }
-        Token::LiteralStr(str) => ast::Expression::Literal(ast::Literal(ast::Value::String(str))),
-        Token::LiteralInt(int) => ast::Expression::Literal(ast::Literal(ast::Value::Int(int))),
+        Token::LiteralStr(str) => ast::Expression::Literal(ast::Value::String(str)),
+        Token::LiteralInt(int) => ast::Expression::Literal(ast::Value::Int(int)),
+        Token::LiteralFloat(float) => ast::Expression::Literal(ast::Value::Float(float)),
         _ => return Err(ParserError::new(&format!("unexpected token: {:?}`", token))),
     };
 
@@ -167,11 +298,11 @@ fn parse_expression(tokens: &mut Tokens<'_>) -> Result<ast::Expression, ParserEr
         Token::Operator(Operator::Add) | Token::Operator(Operator::Subtract)
     ) {
         tokens.next()?;
-        return Ok(ast::Expression::BinaryOperation(ast::BinaryOperation {
+        return Ok(ast::Expression::BinaryOperation {
             left: Box::new(expression),
             operator: ast::BinaryOperator::Add,
             right: Box::new(parse_expression(tokens)?),
-        }));
+        });
     }
 
     Ok(expression)
@@ -267,6 +398,93 @@ mod parser_test {
     }
 
     #[test]
+    fn test_parse_create() {
+        let test_cases = vec![
+            (
+                "create stream",
+                "create stream account;",
+                ast::Transaction {
+                    commands: vec![ast::Command::Create {
+                        entity: ast::Entity::Stream("account".to_string()),
+                    }],
+                },
+            ),
+            (
+                "create stream",
+                "create event AccountCreated(
+                    owner string,
+                    amount int 
+                ) on account;",
+                ast::Transaction {
+                    commands: vec![ast::Command::Create {
+                        entity: ast::Entity::Event {
+                            name: "AccountCreated".to_string(),
+                            stream: "account".to_string(),
+                            attributes: vec![
+                                ast::AttributeDefinition {
+                                    name: "owner".to_string(),
+                                    data_type: "string".to_string(),
+                                },
+                                ast::AttributeDefinition {
+                                    name: "amount".to_string(),
+                                    data_type: "int".to_string(),
+                                },
+                            ],
+                        },
+                    }],
+                },
+            ),
+        ];
+        for (name, input, expected) in test_cases {
+            let ast = match parse(input) {
+                Ok(a) => a,
+                Err(e) => panic!("test cases '{}' failed parsing: {}", name, e),
+            };
+
+            assert_eq!(expected, ast)
+        }
+    }
+
+    #[test]
+    fn test_parse_add() {
+        let test_cases = vec![(
+            "add event to account",
+            r#"add AccountCreated(user_id="123", inital_amount=100.59, currency="SEK") to account(id="123");"#,
+            ast::Transaction {
+                commands: vec![ast::Command::Add {
+                    event: ast::Event {
+                        name: "AccountCreated".to_string(),
+                        values: vec![
+                            ast::AttributeValue {
+                                name: "user_id".to_string(),
+                                value: ast::Value::String("123".to_string()),
+                            },
+                            ast::AttributeValue {
+                                name: "inital_amount".to_string(),
+                                value: ast::Value::Float(100.59),
+                            },
+                            ast::AttributeValue {
+                                name: "currency".to_string(),
+                                value: ast::Value::String("SEK".to_string()),
+                            },
+                        ],
+                    },
+                    stream: "account".to_string(),
+                    stream_id: "123".to_string(),
+                }],
+            },
+        )];
+        for (name, input, expected) in test_cases {
+            let ast = match parse(input) {
+                Ok(a) => a,
+                Err(e) => panic!("test cases '{}' failed parsing: {}", name, e),
+            };
+
+            assert_eq!(expected, ast)
+        }
+    }
+
+    #[test]
     fn test_parse_find() {
         let test_cases = vec![
             (
@@ -279,7 +497,7 @@ mod parser_test {
             ",
                 ast::Transaction {
                     commands: vec![ast::Command::Find {
-                        projections: vec![ast::ProjectionClause {
+                        projections: vec![ast::Projection {
                             alias: "".to_string(),
                             projection: ast::Expression::Attribute {
                                 stream: "account".to_string(),
@@ -301,26 +519,24 @@ mod parser_test {
             "#,
                 ast::Transaction {
                     commands: vec![ast::Command::Find {
-                        projections: vec![ast::ProjectionClause {
+                        projections: vec![ast::Projection {
                             alias: "".to_string(),
                             projection: ast::Expression::Aggregate {
-                                function: ast::AggregateFunction::Sum,
+                                function: ast::Function::Sum,
                                 argument: Box::new(ast::Expression::Attribute {
                                     stream: "account".to_string(),
                                     attribute: "amount".to_string(),
                                 }),
                             },
                         }],
-                        predicates: vec![ast::Predicate::BinaryOperation(ast::BinaryOperation {
-                            left: Box::new(ast::Expression::Attribute {
+                        predicates: vec![ast::Predicate::BinaryOperation {
+                            left: ast::Expression::Attribute {
                                 stream: "account".to_string(),
                                 attribute: "user_id".to_string(),
-                            }),
+                            },
                             operator: ast::BinaryOperator::Equal,
-                            right: Box::new(ast::Expression::Literal(ast::Literal(
-                                ast::Value::String("123".to_string()),
-                            ))),
-                        })],
+                            right: ast::Expression::Literal(ast::Value::String("123".to_string())),
+                        }],
                         limit: None,
                     }],
                 },
@@ -329,41 +545,51 @@ mod parser_test {
                 "nested projection",
                 r#"
             find 
-                 sum(account.amount) + sum(savings.loan) + 100
+                 sum(account.amount) + sum(savings.loan) + 100,
+                 sum(account.amount)
             limit
-                10
-
+                10;
             "#,
                 ast::Transaction {
                     commands: vec![ast::Command::Find {
-                        projections: vec![ast::ProjectionClause {
-                            alias: "".to_string(),
-                            projection: ast::Expression::BinaryOperation(ast::BinaryOperation {
-                                left: Box::new(ast::Expression::Aggregate {
-                                    function: ast::AggregateFunction::Sum,
-                                    argument: Box::new(ast::Expression::Attribute {
-                                        stream: "account".to_string(),
-                                        attribute: "amount".to_string(),
+                        projections: vec![
+                            ast::Projection {
+                                alias: "".to_string(),
+                                projection: ast::Expression::BinaryOperation {
+                                    left: Box::new(ast::Expression::Aggregate {
+                                        function: ast::Function::Sum,
+                                        argument: Box::new(ast::Expression::Attribute {
+                                            stream: "account".to_string(),
+                                            attribute: "amount".to_string(),
+                                        }),
                                     }),
-                                }),
-                                operator: ast::BinaryOperator::Add,
-                                right: Box::new(ast::Expression::BinaryOperation(
-                                    ast::BinaryOperation {
+                                    operator: ast::BinaryOperator::Add,
+                                    right: Box::new(ast::Expression::BinaryOperation {
                                         left: Box::new(ast::Expression::Aggregate {
-                                            function: ast::AggregateFunction::Sum,
+                                            function: ast::Function::Sum,
                                             argument: Box::new(ast::Expression::Attribute {
                                                 stream: "savings".to_string(),
                                                 attribute: "loan".to_string(),
                                             }),
                                         }),
                                         operator: ast::BinaryOperator::Add,
-                                        right: Box::new(ast::Expression::Literal(ast::Literal(
-                                            ast::Value::Int(100),
+                                        right: Box::new(ast::Expression::Literal(ast::Value::Int(
+                                            100,
                                         ))),
-                                    },
-                                )),
-                            }),
-                        }],
+                                    }),
+                                },
+                            },
+                            ast::Projection {
+                                alias: "".to_string(),
+                                projection: ast::Expression::Aggregate {
+                                    function: ast::Function::Sum,
+                                    argument: Box::new(ast::Expression::Attribute {
+                                        stream: "account".to_string(),
+                                        attribute: "amount".to_string(),
+                                    }),
+                                },
+                            },
+                        ],
                         predicates: vec![],
                         limit: Some(ast::Limit(10)),
                     }],

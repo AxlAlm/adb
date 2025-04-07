@@ -35,7 +35,7 @@ pub enum Command {
         //      account.id // attribute (is the last attribute value)
         //      sum(amount) - sum(loan) // aggregate
         // ...
-        projections: Vec<ProjectionClause>,
+        projections: Vec<Projection>,
         predicates: Vec<Predicate>,
         limit: Option<Limit>,
     },
@@ -45,23 +45,41 @@ pub enum Command {
 pub enum Entity {
     Schema,
     Stream(String),
-    Event { name: String, stream: String },
+    Event {
+        name: String,
+        stream: String,
+        attributes: Vec<AttributeDefinition>,
+    },
+}
+
+#[derive(Debug, PartialEq)]
+pub struct AttributeDefinition {
+    pub name: String,
+    pub data_type: String,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Event {
-    name: String,
-    values: Vec<AttributeValue>,
+    pub name: String,
+    pub values: Vec<AttributeValue>,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct AttributeValue {
-    name: String,
-    value: Value,
+    pub name: String,
+    pub value: Value,
 }
 
 #[derive(Debug, PartialEq)]
-pub struct ProjectionClause {
+pub enum Value {
+    Bool(bool),
+    String(String),
+    Int(i64),
+    Float(f64),
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Projection {
     pub alias: String,
     pub projection: Expression,
 }
@@ -73,14 +91,19 @@ pub enum Predicate {
     // acccount.owner-name != "gunnar"
     // sum(account.ammount) < 100
     // _ OR _ ( _ AND _)
-    BinaryOperation(BinaryOperation),
+    //
+    BinaryOperation {
+        left: Expression,
+        operator: BinaryOperator,
+        right: Expression,
+    },
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Limit(pub i64);
 
 #[derive(Debug, PartialEq)]
-pub enum AggregateFunction {
+pub enum Function {
     Sum,
     Min,
     Max,
@@ -89,38 +112,13 @@ pub enum AggregateFunction {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum Value {
-    Bool(bool),
-    String(String),
-    Int(i64),
-    Float(f64),
-    Ignore,
-}
-
-// e.g. "axel", 1, true
-#[derive(Debug, PartialEq)]
-pub struct Literal(pub Value);
-
-#[derive(Debug, PartialEq)]
-pub enum UnaryOperator {
-    Negate, // -x
-}
-
-#[derive(Debug, PartialEq)]
-pub struct BinaryOperation {
-    pub left: Box<Expression>,
-    pub operator: BinaryOperator,
-    pub right: Box<Expression>,
-}
-
-#[derive(Debug, PartialEq)]
 pub enum Expression {
-    Literal(Literal),
+    // Expression(Box<Express
+    Literal(Value),
     Aggregate {
-        function: AggregateFunction,
+        function: Function,
         argument: Box<Expression>,
     },
-    Expression(Box<Expression>),
     Attribute {
         stream: String,
         attribute: String,
@@ -129,7 +127,16 @@ pub enum Expression {
         operator: UnaryOperator,
         operand: Box<Expression>,
     },
-    BinaryOperation(BinaryOperation),
+    BinaryOperation {
+        left: Box<Expression>,
+        operator: BinaryOperator,
+        right: Box<Expression>,
+    },
+}
+
+#[derive(Debug, PartialEq)]
+pub enum UnaryOperator {
+    Negate,
 }
 
 #[derive(Debug, PartialEq)]

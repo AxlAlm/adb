@@ -131,8 +131,11 @@ impl<'a> Tokens<'a> {
                 return Ok(Token::Function(function));
             }
 
-            if buffer_string == "on" || buffer_string == "to" {
-                return Ok(Token::Auxiliary(buffer_string));
+            if buffer_string == "on" {
+                return Ok(Token::AuxiliaryOn);
+            }
+            if buffer_string == "to" {
+                return Ok(Token::AuxiliaryTo);
             }
 
             if buffer[0].is_numeric() {
@@ -209,6 +212,7 @@ pub enum Token {
     LiteralStr(String),
     LiteralInt(i64),
     LiteralFloat(f64),
+    LiteralBool(bool),
     Identifier(String),
     Accessor,
     EOF,        // ;
@@ -216,7 +220,9 @@ pub enum Token {
     GroupStart, // (
     GroupEnd,   // )
     Assign,
-    Auxiliary(String),
+
+    AuxiliaryOn,
+    AuxiliaryTo,
 
     Keyword(Keyword),
     Function(Function),
@@ -502,7 +508,7 @@ mod tokenizer_test {
                     Token::Identifier("owner".to_string()),
                     Token::Identifier("string".to_string()),
                     Token::GroupEnd,
-                    Token::Auxiliary("on".to_string()),
+                    Token::AuxiliaryOn,
                     Token::Identifier("account".to_string()),
                     Token::EOF,
                 ],
@@ -525,7 +531,7 @@ mod tokenizer_test {
                     Token::Identifier("ammount".to_string()),
                     Token::Identifier("int".to_string()),
                     Token::GroupEnd,
-                    Token::Auxiliary("on".to_string()),
+                    Token::AuxiliaryOn,
                     Token::Identifier("account".to_string()),
                     Token::EOF,
                 ],
@@ -568,7 +574,7 @@ mod tokenizer_test {
                     Token::Assign,
                     Token::LiteralStr("SEK".to_string()),
                     Token::GroupEnd,
-                    Token::Auxiliary("to".to_string()),
+                    Token::AuxiliaryTo,
                     Token::Identifier("account".to_string()),
                     Token::GroupStart,
                     Token::Identifier("id".to_string()),
@@ -589,7 +595,7 @@ mod tokenizer_test {
                     Token::Assign,
                     Token::LiteralInt(100),
                     Token::GroupEnd,
-                    Token::Auxiliary("to".to_string()),
+                    Token::AuxiliaryTo,
                     Token::Identifier("account".to_string()),
                     Token::GroupStart,
                     Token::Identifier("id".to_string()),
@@ -613,7 +619,7 @@ mod tokenizer_test {
                     Token::Assign,
                     Token::LiteralInt(100),
                     Token::GroupEnd,
-                    Token::Auxiliary("to".to_string()),
+                    Token::AuxiliaryTo,
                     Token::Identifier("account".to_string()),
                     Token::GroupStart,
                     Token::Identifier("id".to_string()),
@@ -824,7 +830,6 @@ mod tokenizer_test {
             ),
             (
                 "multiple selector",
-                // get the user_id for accounts where sum amount is more than 100
                 r#"
                 find 
                     "test",
@@ -851,7 +856,6 @@ mod tokenizer_test {
             ),
             (
                 "join",
-                // get the user_id for accounts where sum amount is more than 100
                 r#"
                 find 
                     "test"

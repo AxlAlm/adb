@@ -1,5 +1,4 @@
-use crate::ast::schema;
-use crate::event::{AttributeKey, Event};
+use crate::event::Event;
 use crate::planner;
 
 use std::error::Error;
@@ -7,7 +6,6 @@ use std::error::Error;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
-use std::ops::Index;
 use std::sync::{Arc, RwLock};
 
 pub struct DBError {
@@ -36,55 +34,9 @@ impl fmt::Debug for DBError {
 
 impl Error for DBError {}
 
-// pub struct Attribute(pub HashMap<(String, String, String), Arc<RwLock<Vec<Event>>>>);
-
-// // // get last event
-// // // stream / event / attribute / value
-// // //
-// // // get last attribute
-// // // entity /  attribute / value / tx
-// // //
-// // //
-// // // entity / attribute / value / tx
-// // //
-// // //
-
-// // why? get events for a stream + key
-// // stream / key -> events
-// #[derive(Debug)]
-// pub struct SK(pub HashMap<(String, String), Arc<RwLock<Vec<Event>>>>);
-
-// // why? get attributes for a particular stream + key
-// // stream / key / attribute -> attributes
-// #[derive(Debug)]
-// pub struct SKA(pub HashMap<(String, String, String), Arc<RwLock<Vec<AttributeKey>>>>);
-
-// // stream  / attribute -> attributes
-// #[derive(Debug)]
-// pub struct SA(pub HashMap<(String, String), Arc<RwLock<Vec<AttributeKey>>>>);
-
-// stream, attribute, key, value
-
-// get all accounts with balance above 100
+// (stream, key) : []Events
 #[derive(Debug)]
 pub struct Streams(pub HashMap<(String, String), Arc<RwLock<Vec<Event>>>>);
-
-// #[derive(Debug)]
-// pub struct Indexx {
-//     sk: Arc<RwLock<SK>>,
-//     ska: Arc<RwLock<SKA>>,
-//     sa: Arc<RwLock<SA>>,
-// }
-
-// impl Indexx {
-//     fn new() -> Self {
-//         Indexx {
-//             sk: Arc::new(RwLock::new(SK(HashMap::new()))),
-//             ska: Arc::new(RwLock::new(SKA(HashMap::new()))),
-//             sa: Arc::new(RwLock::new(SA(HashMap::new()))),
-//         }
-//     }
-// }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AttributeDetails {
@@ -98,8 +50,8 @@ struct Schema {
     pub streams: HashSet<String>,
     // stream, event
     pub events: HashSet<(String, String)>,
-    // stream, event, attribute -> details
-    pub attributes: HashMap<(String, String, String), AttributeDetails>,
+    // stream, event, attribute -> data_type
+    pub attributes: HashMap<(String, String, String), String>,
 }
 
 #[derive(Debug)]
@@ -119,22 +71,25 @@ impl DB {
     pub fn exec(&self, plan: &planner::ExecutionPlan) -> Result<(), DBError> {
         for op in plan.operations.iter() {
             match op {
-                planner::Operation::UpdateSchemaStream { name } => {
+                planner::Operation::CreateStream { name } => {
                     self.create_stream(&name)?;
                 }
-                // planner::Operation::CreateStream { name } => {
-                //     self.create_stream(&name)?;
-                // }
-                // planner::Operation::CreateEvent { name, stream } => {
-                //     self.create_stream(&name)?;
-                // }
-                planner::Operation::UpdateSchemaAttribute {
+                planner::Operation::CreateEvent {
+                    stream_name: stream,
                     name,
-                    event,
-                    stream,
+                } => {
+                    self.create_event(stream, name)?;
+                }
+                planner::Operation::CreateAttribute {
+                    name,
+                    event_name: event,
+                    stream_name: stream,
                     data_type,
                 } => {
-                    self.create_stream(&name)?;
+                    self.create_attribute(stream, event, name, data_type)?;
+                }
+                planner::Operation::CheckStreamExists { name } => {
+                    self.check_stream_exists(name)?;
                 }
 
                 _ => return Err(DBError::new("unsupported operation")),
@@ -144,112 +99,94 @@ impl DB {
         Ok(())
     }
 
-    // fn check_uniqueness_stream(&self, stream: &str) -> Result<(), DBError> {
-    //     self.schema
-    //         .read()
-    //         .map_err(|e| DBError::new(&format!("failed to read streams: {}", e.to_string())))?
-    //         .streams
-    //         .contains(stream);
-    //     Ok(())
-    // }
+    fn check_stream_exists(&self, stream_name: &str) -> Result<(), DBError> {
+        self.schema
+            .read()
+            .map_err(|e| DBError::new(&format!("failed to read schema: {}", e.to_string())))?
+            .streams
+            .contains(stream_name);
+        Ok(())
+    }
+
+    fn check_event_exists(&self, stream_name: &str, event_name: &str) -> Result<(), DBError> {
+        self.schema
+            .read()
+            .map_err(|e| DBError::new(&format!("failed to read schema: {}", e.to_string())))?
+            .events
+            .contains(&(stream_name.to_string(), event_name.to_string()));
+        Ok(())
+    }
 
     fn create_stream(&self, name: &str) -> Result<(), DBError> {
         self.schema
             .write()
-            .map_err(|e| DBError::new(&format!("failed to read streams: {}", e.to_string())))?
+            .map_err(|e| DBError::new(&format!("failed to read schema: {}", e.to_string())))?
             .streams
             .insert(name.to_string());
 
         return Ok(());
     }
 
-    // pub fn create_event(&self, event: schema::Event) -> Result<(), DBError> {
-    //     let schema = self.get_schema()?;
-    //     if !schema.stream_exists(&event.stream_name) {
-    //         return Err(DBError::new(&format!(
-    //             "stream '{}' not found",
-    //             event.stream_name
-    //         )));
-    //     }
+    pub fn create_event(&self, stream_name: &str, event_name: &str) -> Result<(), DBError> {
+        self.schema
+            .write()
+            .map_err(|e| DBError::new(&format!("failed to read schema: {}", e.to_string())))?
+            .events
+            .insert((stream_name.to_string(), event_name.to_string()));
+        return Ok(());
+    }
 
-    //     self.schema
-    //         .write()
-    //         .map_err(|e| DBError::new(&format!("failed to read streams: {}", e.to_string())))?
-    //         .events
-    //         .insert((event.stream_name.clone(), event.name.clone()), event);
+    pub fn create_attribute(
+        &self,
+        stream_name: &str,
+        event_name: &str,
+        attribute_name: &str,
+        data_type: &str,
+    ) -> Result<(), DBError> {
+        self.schema
+            .write()
+            .map_err(|e| DBError::new(&format!("failed to read schema: {}", e.to_string())))?
+            .attributes
+            .insert(
+                (
+                    stream_name.to_string(),
+                    event_name.to_string(),
+                    attribute_name.to_string(),
+                ),
+                data_type.to_string(),
+            );
+        return Ok(());
+    }
 
-    //     return Ok(());
-    // }
+    pub fn add_event(&self, event: Event) -> Result<(), DBError> {
+        let k = (event.stream.clone(), event.key.clone());
+        let stream = {
+            let mut streams = self
+                .streams
+                .write()
+                .map_err(|_| DBError::new(&"failed to read streams".to_string()))?;
+            let stream = streams.0.entry(k).or_insert(Arc::new(RwLock::new(vec![])));
+            stream.clone()
+        };
 
-    // pub fn create_attribute(&self, attribute: schema::Attribute) -> Result<(), DBError> {
-    //     let schema = self.get_schema()?;
-    //     if !schema.stream_exists(&attribute.stream_name) {
-    //         return Err(DBError::new(&format!(
-    //             "stream '{}' not found",
-    //             attribute.stream_name
-    //         )));
-    //     }
+        let last_version = stream
+            .read()
+            .map_err(|_| DBError::new(&"failed to read streams".to_string()))?
+            .last()
+            .map_or(0, |e| e.version);
 
-    //     if !schema.event_exists(&(attribute.stream_name.clone(), attribute.event_name.clone())) {
-    //         return Err(DBError::new(&format!(
-    //             "event '{}' not found",
-    //             attribute.event_name
-    //         )));
-    //     }
+        if event.version != last_version + 1 {
+            return Err(DBError::new(
+                &"failed to add event as verion is not serial".to_string(),
+            ));
+        }
 
-    //     self.schema
-    //         .write()
-    //         .map_err(|e| DBError::new(&format!("failed to read streams: {}", e.to_string())))?
-    //         .attributes
-    //         .insert(
-    //             (
-    //                 attribute.stream_name.clone(),
-    //                 attribute.event_name.clone(),
-    //                 attribute.name.clone(),
-    //             ),
-    //             attribute,
-    //         );
-
-    //     return Ok(());
-    // }
-
-    // pub fn get_schema(&self) -> Result<schema::Schema, DBError> {
-    //     let schema = self
-    //         .schema
-    //         .read()
-    //         .map_err(|e| DBError::new(&format!("failed to read streams: {}", e.to_string())))?;
-    //     return Ok(schema.clone());
-    // }
-
-    // pub fn add_event(&self, event: Event) -> Result<(), DBError> {
-    //     let k = (event.stream.clone(), event.key.clone());
-    //     let stream = {
-    //         let mut streams = self
-    //             .streams
-    //             .write()
-    //             .map_err(|_| DBError::new(&"failed to read streams".to_string()))?;
-    //         let stream = streams.0.entry(k).or_insert(Arc::new(RwLock::new(vec![])));
-    //         stream.clone()
-    //     };
-
-    //     let last_version = stream
-    //         .read()
-    //         .map_err(|_| DBError::new(&"failed to read streams".to_string()))?
-    //         .last()
-    //         .map_or(0, |e| e.version);
-
-    //     if event.version != last_version + 1 {
-    //         return Err(DBError::new(
-    //             &"failed to add event as verion is not serial".to_string(),
-    //         ));
-    //     }
-
-    //     stream
-    //         .write()
-    //         .map_err(|e| DBError::new(&format!("failed to add event: {}", e.to_string())))?
-    //         .push(event);
-    //     Ok(())
-    // }
+        stream
+            .write()
+            .map_err(|e| DBError::new(&format!("failed to add event: {}", e.to_string())))?
+            .push(event);
+        Ok(())
+    }
 
     // pub fn get_events(
     //     &self,

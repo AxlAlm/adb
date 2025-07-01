@@ -32,7 +32,7 @@ pub enum Entity {
     Stream(String),
     Event {
         name: String,
-        stream: String,
+        stream_name: String,
         attributes: Vec<AttributeDefinition>,
     },
 }

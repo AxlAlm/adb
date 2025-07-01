@@ -100,7 +100,7 @@ fn parse_create(tokens: &mut Tokens<'_>) -> Result<ast::Command, ParserError> {
             let stream = match_extract!(tokens, Token::Identifier(name) => name);
             ast::Entity::Event {
                 name,
-                stream,
+                stream_name: stream,
                 attributes,
             }
         }
@@ -419,7 +419,7 @@ mod parser_test {
                     commands: vec![ast::Command::Create {
                         entity: ast::Entity::Event {
                             name: "AccountCreated".to_string(),
-                            stream: "account".to_string(),
+                            stream_name: "account".to_string(),
                             attributes: vec![
                                 ast::AttributeDefinition {
                                     name: "owner".to_string(),

@@ -24,6 +24,6 @@ pub struct Event {
 #[derive(Debug, PartialEq, Default, Clone)]
 pub struct Schema {
     pub streams: HashSet<String>,
-    pub events: HashMap<(String, String), Event>,
+    pub events: HashMap<(String, String), String>,
     pub attributes: HashMap<(String, String, String), Attribute>,
 }

@@ -1,6 +1,6 @@
 use std::{error::Error, fmt};
 
-use crate::ast::ast;
+use crate::{ast::ast, event};
 
 pub fn plan(transaction: &ast::Transaction) -> Result<ExecutionPlan, PlanError> {
     dbg!("OKEFOKEOKEKFOEKF");
@@ -10,20 +10,34 @@ pub fn plan(transaction: &ast::Transaction) -> Result<ExecutionPlan, PlanError> 
         match cmd {
             ast::Command::Create { entity } => match entity {
                 ast::Entity::Stream(name) => {
-                    operations.push(Operation::UpdateSchemaStream { name: name.clone() })
+                    operations.push(Operation::CheckStreamExists {
+                        name: name.to_string(),
+                    });
+                    operations.push(Operation::CreateStream { name: name.clone() })
                 }
                 ast::Entity::Event {
                     name,
-                    stream,
+                    stream_name,
                     attributes,
                 } => {
-                    operations.extend(attributes.iter().map(|a| {
-                        Operation::UpdateSchemaAttribute {
-                            name: a.name.clone(),
-                            event: name.clone(),
-                            stream: stream.clone(),
-                            data_type: a.data_type.clone(),
-                        }
+                    operations.push(Operation::CheckStreamExists {
+                        name: stream_name.to_string(),
+                    });
+
+                    operations.push(Operation::CheckEventExists {
+                        name: name.to_string(),
+                    });
+
+                    operations.push(Operation::CreateEvent {
+                        name: name.to_string(),
+                        stream_name: stream_name.to_string(),
+                    });
+
+                    operations.extend(attributes.iter().map(|a| Operation::CreateAttribute {
+                        name: a.name.clone(),
+                        event_name: name.clone(),
+                        stream_name: stream_name.clone(),
+                        data_type: a.data_type.clone(),
                     }));
                 }
                 _ => return Err(PlanError::new("unreconizable entity")),
@@ -46,35 +60,28 @@ pub struct ExecutionPlan {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Operation {
-    // ConflictCheckStream {
-    //     name: String,
-    // },
-    // CreateStream {
-    //     name: String,
-    // },
+    CheckStreamExists {
+        name: String,
+    },
+    CheckEventExists {
+        name: String,
+    },
+    CreateStream {
+        name: String,
+    },
     CreateEvent {
         name: String,
-        stream: String,
+        stream_name: String,
     },
     CreateAttribute {
         name: String,
-        event: String,
-        stream: String,
-        data_type: DataType,
+        event_name: String,
+        stream_name: String,
+        data_type: String,
     },
 
-    UpdateSchemaStream {
-        name: String,
-    },
-    UpdateSchemaEvent {
-        name: String,
-        stream: String,
-    },
-    UpdateSchemaAttribute {
-        name: String,
-        event: String,
-        stream: String,
-        data_type: String,
+    AddEvent {
+        event: event::Event,
     },
 }
 

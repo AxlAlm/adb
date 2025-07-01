@@ -33,3 +33,32 @@ pub struct Attribute {
     pub name: String,
     pub value: String,
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AttributeKey {
+    pub key: String,
+    pub event: String,
+    pub name: String,
+    pub value: String,
+    pub version: u64,
+    pub timestamp: u128,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EventKey {
+    pub id: String,
+    pub stream: String,
+    pub key: String,
+    pub event: String,
+    pub version: u64,
+    pub timestamp: u128,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AttributeKey2 {
+    pub event_id: String,
+    pub name: String,
+    pub value: String,
+    pub version: u64,
+    pub timestamp: u128,
+}

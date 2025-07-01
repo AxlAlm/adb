@@ -36,7 +36,7 @@ macro_rules! match_extract {
     }};
 }
 
-fn parse(input: &str) -> Result<ast::Transaction, ParserError> {
+pub fn parse(input: &str) -> Result<ast::Transaction, ParserError> {
     let mut tokens = tokenize(input);
 
     let mut commands = vec![];
@@ -333,7 +333,7 @@ fn parse_entity(tokens: &mut Tokens<'_>) -> Result<ast::Entity, ParserError> {
 }
 
 #[derive(Debug)]
-struct ParserError {
+pub struct ParserError {
     message: String,
 }
 

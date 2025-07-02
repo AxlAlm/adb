@@ -120,7 +120,12 @@ impl DB {
     fn create_stream(&self, name: &str) -> Result<(), DBError> {
         self.schema
             .write()
-            .map_err(|e| DBError::new(&format!("failed to read schema: {}", e.to_string())))?
+            .map_err(|e| {
+                DBError::new(&format!(
+                    "failed to aquire write access for schema: {}",
+                    e.to_string()
+                ))
+            })?
             .streams
             .insert(name.to_string());
 
@@ -130,7 +135,12 @@ impl DB {
     pub fn create_event(&self, stream_name: &str, event_name: &str) -> Result<(), DBError> {
         self.schema
             .write()
-            .map_err(|e| DBError::new(&format!("failed to read schema: {}", e.to_string())))?
+            .map_err(|e| {
+                DBError::new(&format!(
+                    "failed to aquire write access for schema: {}",
+                    e.to_string()
+                ))
+            })?
             .events
             .insert((stream_name.to_string(), event_name.to_string()));
         return Ok(());
@@ -161,12 +171,21 @@ impl DB {
     pub fn add_event(&self, event: Event) -> Result<(), DBError> {
         let k = (event.stream.clone(), event.key.clone());
         let stream = {
-            let mut streams = self
+            let streams = self
                 .streams
+                .read()
+                .map_err(|_| DBError::new(&"failed to read streams".to_string()))?
+                .0
+                .get_mut(&k)
+                .ok_or(DBError::new(&"failed to read streams".to_string()))?
                 .write()
                 .map_err(|_| DBError::new(&"failed to read streams".to_string()))?;
-            let stream = streams.0.entry(k).or_insert(Arc::new(RwLock::new(vec![])));
-            stream.clone()
+
+            if event.version != streams.last().map_or(0, |e| e.version) + 1 {
+                return Err(DBError::new(
+                    &"failed to add event as verion is not serial".to_string(),
+                ));
+            }
         };
 
         let last_version = stream
@@ -175,11 +194,7 @@ impl DB {
             .last()
             .map_or(0, |e| e.version);
 
-        if event.version != last_version + 1 {
-            return Err(DBError::new(
-                &"failed to add event as verion is not serial".to_string(),
-            ));
-        }
+        if event.version != last_version + 1 {}
 
         stream
             .write()

@@ -11,7 +11,7 @@ use tokio::net::{TcpListener, TcpStream};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let db = Arc::new(db::DB::new(None));
+    let db = Arc::new(db::DB::new());
 
     let listener = TcpListener::bind("127.0.0.1:8080").await?;
     println!("Server listening on port 8080");
@@ -77,27 +77,9 @@ mod e2e_test {
     use std::sync::Arc;
 
     #[tokio::test]
-    async fn test_create_stream() {
-        let db = Arc::new(DB::new(None));
-        let cmd = "create stream account;";
-
-        match exec(&cmd, db.clone()).await {
-            Ok(_) => eprintln!("created stream succeefully"),
-            Err(e) => panic!("failed to create stream: {}", e),
-        }
-
-        // running it again should work. No conflict as stream already exists
-        match exec(&cmd, db.clone()).await {
-            Ok(_) => eprintln!("created stream succeefully"),
-            Err(e) => panic!("failed to create stream: {}", e),
-        }
-    }
-
-    #[tokio::test]
     async fn test_create_event() {
-        let db = Arc::new(DB::new(None));
+        let db = Arc::new(DB::new());
 
-        // lets first create a stream
         let cmd = "create stream account;";
         match exec(&cmd, db.clone()).await {
             Ok(_) => eprintln!("created stream succeefully"),
@@ -109,14 +91,14 @@ mod e2e_test {
                     amount int 
                 ) on account;";
         match exec(&cmd, db.clone()).await {
-            Ok(_) => eprintln!("created stream succeefully"),
+            Ok(_) => eprintln!("created event succeefully"),
             Err(e) => panic!("failed to create event: {}", e),
         }
 
         // running it again should not work. As events has attribute that can change
         // we should conflict when trying to create a new
         match exec(&cmd, db.clone()).await {
-            Ok(_) => eprintln!("created stream succeefully"),
+            Ok(_) => eprintln!("created event succeefully"),
             Err(e) => panic!("failed to create event: {}", e),
         }
     }
@@ -133,30 +115,43 @@ mod e2e_concurrency_test {
     use tokio::time::Duration;
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
-    async fn test_concurrent_write_to_different_keys() {
-        let db = Arc::new(DB::new(None));
+    async fn test_concurrent_write_to_different_streams() {
+        let db = Arc::new(DB::new());
 
-        // DO SOME SCHEMA STUFF
+        let cmd = "create stream account;";
+        match exec(&cmd, db.clone()).await {
+            Ok(_) => eprintln!("created stream succeefully"),
+            Err(e) => panic!("failed to create stream: {}", e),
+        }
+
+        let cmd = "create event AccountCreated(
+                    owner string,
+                    amount int 
+                ) on account;";
+        match exec(&cmd, db.clone()).await {
+            Ok(_) => eprintln!("created event succeefully"),
+            Err(e) => panic!("failed to create event: {}", e),
+        };
 
         let failed_write_counter = Arc::new(AtomicU32::new(0));
 
         let mut set = tokio::task::JoinSet::new();
 
-        let input = r#"
-        ADD AccountCreated(owner-name="axel") -> account:123;
-    "#;
-
         // Spawn writer tasks
-        for _writer_id in 0..1 {
+        for stream_id in vec!["123", "456", "789"] {
             let db = db.clone();
             let failed_write_counter = failed_write_counter.clone();
-            let input = input.to_string();
+
+            let cmd = format!(
+                r#"add AccountCreated(owner="123", amount=100) to account(id="{}");"#,
+                stream_id
+            );
 
             set.spawn(async move {
                 let end_time = tokio::time::Instant::now() + Duration::from_secs(2);
 
                 while tokio::time::Instant::now() < end_time {
-                    match exec(&input, db.clone()).await {
+                    match exec(&cmd, db.clone()).await {
                         Ok(_) => {}
                         Err(_e) => {
                             failed_write_counter.fetch_add(1, Ordering::Relaxed);
@@ -167,58 +162,6 @@ mod e2e_concurrency_test {
             });
         }
 
-        let input = r#"
-        ADD AccountCreated(owner-name="axel") -> account:1234;
-    "#;
-
-        // Spawn writer tasks
-        for _writer_id in 0..1 {
-            let db = db.clone();
-            let failed_write_counter = failed_write_counter.clone();
-            let input = input.to_string();
-            // let db = db.clone();
-
-            set.spawn(async move {
-                let end_time = tokio::time::Instant::now() + Duration::from_secs(2);
-
-                while tokio::time::Instant::now() < end_time {
-                    match exec(&input, db.clone()).await {
-                        Ok(_) => {}
-                        Err(_e) => {
-                            failed_write_counter.fetch_add(1, Ordering::Relaxed);
-                        }
-                    }
-                    tokio::time::sleep(Duration::from_millis(10)).await;
-                }
-            });
-        }
-
-        let input = r#"
-        ADD AccountCreated(owner-name="axel") -> account:12345;
-    "#;
-
-        // Spawn writer tasks
-        for _writer_id in 0..1 {
-            let db = db.clone();
-            let failed_write_counter = failed_write_counter.clone();
-            let input = input.to_string();
-
-            set.spawn(async move {
-                let end_time = tokio::time::Instant::now() + Duration::from_secs(2);
-
-                while tokio::time::Instant::now() < end_time {
-                    match exec(&input, db.clone()).await {
-                        Ok(_) => {}
-                        Err(_e) => {
-                            failed_write_counter.fetch_add(1, Ordering::Relaxed);
-                        }
-                    }
-                    tokio::time::sleep(Duration::from_millis(10)).await;
-                }
-            });
-        }
-
-        // Wait for all tasks to complete
         while let Some(res) = set.join_next().await {
             res.unwrap();
         }
@@ -230,30 +173,42 @@ mod e2e_concurrency_test {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
-    async fn test_concurrent_write_to_same_key() {
-        let db = Arc::new(DB::new(None));
+    async fn test_concurrent_write_to_same_stream() {
+        let db = Arc::new(DB::new());
 
-        // DO SOME SCHEMA STUFF
-        //
+        let cmd = "create stream account;";
+        match exec(&cmd, db.clone()).await {
+            Ok(_) => eprintln!("created stream succeefully"),
+            Err(e) => panic!("failed to create stream: {}", e),
+        }
+
+        let cmd = "create event AccountCreated(
+                    owner string,
+                    amount int 
+                ) on account;";
+        match exec(&cmd, db.clone()).await {
+            Ok(_) => eprintln!("created event succeefully"),
+            Err(e) => panic!("failed to create event: {}", e),
+        };
+
         let failed_write_counter = Arc::new(AtomicU32::new(0));
 
         let mut set = tokio::task::JoinSet::new();
 
-        let input = r#"
-        ADD AccountCreated(owner-name="axel") -> account:123;
-    "#;
-
-        // Spawn writer tasks
-        for _writer_id in 0..5 {
+        for stream_id in vec!["123", "123"] {
             let db = db.clone();
             let failed_write_counter = failed_write_counter.clone();
-            let input = input.to_string();
+
+            let cmd = format!(
+                r#"add AccountCreated(owner="123", amount=100) to account(id="{}");"#,
+                stream_id
+            );
 
             set.spawn(async move {
                 let end_time = tokio::time::Instant::now() + Duration::from_secs(2);
 
                 while tokio::time::Instant::now() < end_time {
-                    match exec(&input, db.clone()).await {
+                    match exec(&cmd, db.clone()).await {
                         Ok(_) => {}
                         Err(_e) => {
                             failed_write_counter.fetch_add(1, Ordering::Relaxed);
@@ -264,7 +219,6 @@ mod e2e_concurrency_test {
             });
         }
 
-        // Wait for all tasks to complete
         while let Some(res) = set.join_next().await {
             res.unwrap();
         }

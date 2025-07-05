@@ -42,6 +42,11 @@ pub fn plan(transaction: &ast::Transaction) -> Result<ExecutionPlan, PlanError> 
                 }
                 _ => return Err(PlanError::new("unreconizable entity")),
             },
+            ast::Command::Add {
+                event,
+                stream,
+                stream_id,
+            } => {}
             _ => return Err(PlanError::new("cannot handle that command")),
         }
     }

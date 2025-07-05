@@ -169,335 +169,48 @@ impl DB {
     }
 
     pub fn add_event(&self, event: Event) -> Result<(), DBError> {
-        let k = (event.stream.clone(), event.key.clone());
-        let stream = {
-            let streams = self
-                .streams
-                .read()
-                .map_err(|_| DBError::new(&"failed to read streams".to_string()))?
-                .0
-                .get_mut(&k)
-                .ok_or(DBError::new(&"failed to read streams".to_string()))?
-                .write()
-                .map_err(|_| DBError::new(&"failed to read streams".to_string()))?;
-
-            if event.version != streams.last().map_or(0, |e| e.version) + 1 {
-                return Err(DBError::new(
-                    &"failed to add event as verion is not serial".to_string(),
-                ));
-            }
-        };
-
-        let last_version = stream
+        let streams = self
+            .streams
             .read()
-            .map_err(|_| DBError::new(&"failed to read streams".to_string()))?
-            .last()
-            .map_or(0, |e| e.version);
+            .map_err(|_| DBError::new(&"failed to read streams".to_string()))?;
 
-        if event.version != last_version + 1 {}
+        let stream_arc = streams
+            .0
+            .get(&(event.stream.clone(), event.key.clone()))
+            .ok_or(DBError::new(&"stream not found".to_string()))?;
 
-        stream
+        let mut stream = stream_arc
             .write()
-            .map_err(|e| DBError::new(&format!("failed to add event: {}", e.to_string())))?
-            .push(event);
+            .map_err(|_| DBError::new(&"failed to write to stream".to_string()))?;
+
+        if event.version != stream.last().map_or(0, |e| e.version) + 1 {
+            return Err(DBError::new(
+                &"failed to add event as version is not serial".to_string(),
+            ));
+        }
+
+        stream.push(event);
         Ok(())
     }
 
-    // pub fn get_events(
-    //     &self,
-    //     stream_name: String,
-    //     key: String,
-    // ) -> Result<Option<Vec<Event>>, DBError> {
-    //     let streams = self
-    //         .streams
-    //         .read()
-    //         .map_err(|e| DBError::new(&format!("failed to read streams: {}", e.to_string())))?;
+    pub fn get_events(
+        &self,
+        stream_name: String,
+        key: String,
+    ) -> Result<Option<Vec<Event>>, DBError> {
+        let streams = self
+            .streams
+            .read()
+            .map_err(|e| DBError::new(&format!("failed to read streams: {}", e.to_string())))?;
 
-    //     match streams.0.get(&(stream_name, key)) {
-    //         Some(events_lock) => {
-    //             let events = events_lock.read().map_err(|e| {
-    //                 DBError::new(&format!("failed to read event stream: {}", e.to_string()))
-    //             })?;
-    //             Ok(Some(events.clone()))
-    //         }
-    //         None => Ok(None),
-    //     }
-    // }
+        match streams.0.get(&(stream_name, key)) {
+            Some(events_lock) => {
+                let events = events_lock.read().map_err(|e| {
+                    DBError::new(&format!("failed to read event stream: {}", e.to_string()))
+                })?;
+                Ok(Some(events.clone()))
+            }
+            None => Ok(None),
+        }
+    }
 }
-
-// #[cfg(test)]
-// mod tests {
-
-//     use super::*;
-//     use crate::ast::schema::{Attribute, Event, Schema};
-//     use crate::event;
-//     use std::time::{SystemTime, UNIX_EPOCH};
-
-//     #[test]
-//     fn test_db() {
-//         let db = DB::new(None);
-
-//         let stream_name = "account".to_string();
-//         let event_name = "AccountCreated".to_string();
-//         let key = "123".to_string();
-
-//         let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-
-//         let event = event::Event {
-//             stream: stream_name.clone(),
-//             key: key.clone(),
-//             event: event_name.clone(),
-//             attributes: vec![event::Attribute {
-//                 name: "owner-name".to_string(),
-//                 value: "axel".to_string(),
-//             }],
-//             version: 1,
-//             timestamp: now.as_millis(),
-//         };
-
-//         match db.add_event(event.clone()) {
-//             Ok(_) => (),
-//             Err(e) => panic!("failed to add event: {}", e),
-//         }
-
-//         let got = match db.get_events(stream_name.clone(), key.clone()) {
-//             Ok(e) => e.unwrap(),
-//             Err(e) => panic!("failed to add event: {}", e),
-//         };
-
-//         if got.len() != 1 {
-//             panic!("event stream is empty. expected one event")
-//         }
-
-//         assert_eq!(event, got[0]);
-//     }
-
-//     // #[test]
-//     // fn test_db() {
-//     //     let schema = Schema {
-//     //         streams: HashMap::from([(
-//     //             "account".to_string(),
-//     //             Stream {
-//     //                 name: "account".to_string(),
-//     //                 key: "account-id".to_string(),
-//     //             },
-//     //         )]),
-//     //         events: HashMap::from([(
-//     //             ("account".to_string(), "AccountCreated".to_string()),
-//     //             Event {
-//     //                 name: "AccountCreated".to_string(),
-//     //                 stream_name: "account".to_string(),
-//     //             },
-//     //         )]),
-//     //         attributes: HashMap::from([(
-//     //             (
-//     //                 "account".to_string(),
-//     //                 "AccountCreated".to_string(),
-//     //                 "owner-name".to_string(),
-//     //             ),
-//     //             Attribute {
-//     //                 name: "owner-name".to_string(),
-//     //                 event_name: "AccountCreated".to_string(),
-//     //                 stream_name: "account".to_string(),
-//     //                 required: true,
-//     //                 attribute_type: "string".to_string(),
-//     //             },
-//     //         )]),
-//     //     };
-
-//     //     let db = DB::new(Some(schema));
-
-//     //     let stream_name = "account".to_string();
-//     //     let event_name = "AccountCreated".to_string();
-//     //     let key = "123".to_string();
-
-//     //     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-
-//     //     let event = event::Event {
-//     //         stream: stream_name.clone(),
-//     //         key: key.clone(),
-//     //         event: event_name.clone(),
-//     //         attributes: vec![event::Attribute {
-//     //             name: "owner-name".to_string(),
-//     //             value: "axel".to_string(),
-//     //         }],
-//     //         version: 1,
-//     //         timestamp: now.as_millis(),
-//     //     };
-
-//     //     match db.add_event(event.clone()) {
-//     //         Ok(_) => (),
-//     //         Err(e) => panic!("failed to add event: {}", e),
-//     //     }
-
-//     //     let got = match db.get_events(stream_name.clone(), key.clone()) {
-//     //         Ok(e) => e.unwrap(),
-//     //         Err(e) => panic!("failed to add event: {}", e),
-//     //     };
-
-//     //     if got.len() != 1 {
-//     //         panic!("event stream is empty. expected one event")
-//     //     }
-
-//     //     assert_eq!(event, got[0]);
-//     // }
-
-//     // #[test]
-//     // fn test_ensure_serial() {
-//     //     let schema = Schema {
-//     //         streams: HashMap::from([(
-//     //             "account".to_string(),
-//     //             Stream {
-//     //                 name: "account".to_string(),
-//     //                 key: "account-id".to_string(),
-//     //             },
-//     //         )]),
-//     //         events: HashMap::from([(
-//     //             ("account".to_string(), "AccountCreated".to_string()),
-//     //             Event {
-//     //                 name: "AccountCreated".to_string(),
-//     //                 stream_name: "account".to_string(),
-//     //             },
-//     //         )]),
-//     //         attributes: HashMap::from([(
-//     //             (
-//     //                 "account".to_string(),
-//     //                 "AccountCreated".to_string(),
-//     //                 "owner-name".to_string(),
-//     //             ),
-//     //             Attribute {
-//     //                 name: "owner-name".to_string(),
-//     //                 event_name: "AccountCreated".to_string(),
-//     //                 stream_name: "account".to_string(),
-//     //                 required: true,
-//     //                 attribute_type: "string".to_string(),
-//     //             },
-//     //         )]),
-//     //     };
-
-//     //     let db = DB::new(Some(schema));
-
-//     //     let stream_name = "account".to_string();
-//     //     let event_name = "AccountCreated".to_string();
-//     //     let key = "123".to_string();
-
-//     //     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-
-//     //     let event = event::Event {
-//     //         stream: stream_name.clone(),
-//     //         key: key.clone(),
-//     //         event: event_name.clone(),
-//     //         attributes: vec![event::Attribute {
-//     //             name: "owner-name".to_string(),
-//     //             value: "axel".to_string(),
-//     //         }],
-//     //         version: 1,
-//     //         timestamp: now.as_millis(),
-//     //     };
-
-//     //     match db.add_event(event.clone()) {
-//     //         Ok(_) => (),
-//     //         Err(e) => panic!("failed to add event: {}", e),
-//     //     }
-
-//     //     match db.add_event(event.clone()) {
-//     //         Ok(_) => panic!("expected failure to add event due to version incorrect"),
-//     //         Err(e) => println!("failed to add event: {}", e),
-//     //     }
-//     // }
-
-//     // #[test]
-//     // fn test_fail_to_create_event_for_non_existing_stream() {
-//     //     let schema = Schema {
-//     //         streams: HashMap::from([(
-//     //             "account".to_string(),
-//     //             Stream {
-//     //                 name: "account".to_string(),
-//     //                 key: "account-id".to_string(),
-//     //             },
-//     //         )]),
-//     //         events: HashMap::from([(
-//     //             ("account".to_string(), "AccountCreated".to_string()),
-//     //             Event {
-//     //                 name: "AccountCreated".to_string(),
-//     //                 stream_name: "account".to_string(),
-//     //             },
-//     //         )]),
-//     //         attributes: HashMap::from([(
-//     //             (
-//     //                 "account".to_string(),
-//     //                 "AccountCreated".to_string(),
-//     //                 "owner-name".to_string(),
-//     //             ),
-//     //             Attribute {
-//     //                 name: "owner-name".to_string(),
-//     //                 event_name: "AccountCreated".to_string(),
-//     //                 stream_name: "account".to_string(),
-//     //                 required: true,
-//     //                 attribute_type: "string".to_string(),
-//     //             },
-//     //         )]),
-//     //     };
-
-//     //     let db = DB::new(Some(schema));
-
-//     //     let event = schema::Event {
-//     //         name: "AccountCreated".to_string(),
-//     //         stream_name: "DOES NOT EXIST".to_string(),
-//     //     };
-
-//     //     match db.create_event(event.clone()) {
-//     //         Ok(_) => panic!("expect to fail to create event"),
-//     //         Err(e) => println!("successfully failed: {}", e),
-//     //     }
-//     // }
-
-//     // #[test]
-//     // fn test_fail_to_create_attribute_for_non_existing_stream_event() {
-//     //     let schema = Schema {
-//     //         streams: HashMap::from([(
-//     //             "account".to_string(),
-//     //             Stream {
-//     //                 name: "account".to_string(),
-//     //                 key: "account-id".to_string(),
-//     //             },
-//     //         )]),
-//     //         events: HashMap::from([(
-//     //             ("account".to_string(), "AccountCreated".to_string()),
-//     //             Event {
-//     //                 name: "AccountCreated".to_string(),
-//     //                 stream_name: "account".to_string(),
-//     //             },
-//     //         )]),
-//     //         attributes: HashMap::from([(
-//     //             (
-//     //                 "account".to_string(),
-//     //                 "AccountCreated".to_string(),
-//     //                 "owner-name".to_string(),
-//     //             ),
-//     //             Attribute {
-//     //                 name: "owner-name".to_string(),
-//     //                 event_name: "AccountCreated".to_string(),
-//     //                 stream_name: "account".to_string(),
-//     //                 required: true,
-//     //                 attribute_type: "string".to_string(),
-//     //             },
-//     //         )]),
-//     //     };
-
-//     //     let db = DB::new(Some(schema));
-
-//     //     let event = schema::Attribute {
-//     //         name: "AccountCreated".to_string(),
-//     //         stream_name: "DOES NOT EXIST".to_string(),
-//     //         event_name: "DOES NOT EXIST".to_string(),
-//     //         required: true,
-//     //         attribute_type: "string".to_string(),
-//     //     };
-
-//     //     match db.create_attribute(event.clone()) {
-//     //         Ok(_) => panic!("expect to fail to create attribute"),
-//     //         Err(e) => println!("successfully failed: {}", e),
-//     //     }
-//     // }
-// }
